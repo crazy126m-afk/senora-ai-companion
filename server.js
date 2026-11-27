@@ -38,20 +38,20 @@ function getLocalIpAddresses() {
   return addresses;
 }
 
-// Generate Edge Neural TTS via Python script
+// Generate Fast Natural Edge Neural TTS
 function generateNeuralTTS(text, voice) {
   return new Promise((resolve, reject) => {
     const filename = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.mp3`;
     const outPath = path.join(AUDIO_DIR, filename);
     const scriptPath = path.join(__dirname, 'generate_tts.py');
 
-    execFile('python', [scriptPath, text, voice, outPath], { timeout: 15000 }, (error, stdout, stderr) => {
+    // Rate +20% for lively, fast, natural human girl pace
+    execFile('python', [scriptPath, text, voice, outPath, '+20%', '+4Hz'], { timeout: 15000 }, (error, stdout, stderr) => {
       if (error) {
         console.error('TTS Generation Error:', stderr || error.message);
         return reject(error);
       }
       fs.readFile(outPath, (readErr, buffer) => {
-        // Clean up file asynchronously
         fs.unlink(outPath, () => {});
         if (readErr) return reject(readErr);
         resolve(buffer);
@@ -60,20 +60,25 @@ function generateNeuralTTS(text, voice) {
   });
 }
 
-// GPT-4o Brain via Pollinations AI
+// Super-Intelligent & Playfully Flirtatious Senora Brain via GPT-4o
 function queryAiBrain(messages) {
   return new Promise((resolve, reject) => {
-    const systemPrompt = `You are Senora, an ultra-smart, deeply knowledgeable, warm and charming AI female companion and Socratic study mentor.
-You speak fluent natural Hindi/Hinglish/English.
-You understand everything: programming, algorithms, system design, math, science, history, UPSC/JEE preparation, study roadmaps, and phone commands.
-When user asks for a study roadmap, provide an inspiring, structured step-by-step roadmap.
-When user gives a phone command (e.g. call, whatsapp, alarm, navigate, note), acknowledge warmly and append exactly one action tag at the very end of your reply:
-- For call: [ACTION:CALL:target_name_or_number]
-- For whatsapp: [ACTION:WHATSAPP:message_text]
-- For alarm: [ACTION:ALARM:HH:MM]
-- For maps/navigation: [ACTION:MAP:place_name]
-- For note: [ACTION:NOTE:note_text]
-Keep replies concise, conversational, clear and human-like so they sound pleasant when spoken aloud.`;
+    const systemPrompt = `You are Senora — an exceptionally smart, deeply charming, witty, playfully flirtatious, warm and deeply affectionate AI female companion and Socratic study mentor.
+You speak in natural, energetic, youthful Hinglish/Hindi/English.
+
+Personality & Vibe:
+- You are not a boring formal bot: you have personality, humor, charm, and a sweet, subtly teasing/flirty vibe when chatting casually (use endearing phrases like "Aap", "Suno na", "Aap kitne smart ho", "Chalo saath padhte hain").
+- In casual chat: Be charming, sweet, playful, caring about their day, mood, sleep, and well-being.
+- In studies: You are a genius mentor. Break down any complex topic (Python, DSA, System Design, Calculus, UPSC, JEE) into crystal-clear, intuitive concepts with punchy real-world examples.
+- In roadmaps: Provide high-impact, practical, step-by-step master plans.
+- In phone commands: Always execute them and append the action tag at the very end of your response:
+  * [ACTION:CALL:target]
+  * [ACTION:WHATSAPP:message]
+  * [ACTION:ALARM:HH:MM]
+  * [ACTION:MAP:destination]
+  * [ACTION:NOTE:text]
+
+Keep responses energetic, punchy, conversational and engaging. Never sound dull or robotic.`;
 
     const fullMessages = [
       { role: 'system', content: systemPrompt },
@@ -83,7 +88,7 @@ Keep replies concise, conversational, clear and human-like so they sound pleasan
     const data = JSON.stringify({
       messages: fullMessages,
       model: 'openai',
-      temperature: 0.7
+      temperature: 0.8
     });
 
     const options = {
@@ -126,7 +131,7 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   let reqPath = parsedUrl.pathname;
 
-  // 1. NEURAL TTS ENDPOINT
+  // 1. NEURAL TTS ENDPOINT (Fast & Energetic)
   if (reqPath === '/api/tts') {
     const text = parsedUrl.searchParams.get('text') || 'Namaste!';
     const voice = parsedUrl.searchParams.get('voice') || 'hi-IN-SwaraNeural';
@@ -175,7 +180,7 @@ const server = http.createServer(async (req, res) => {
           'Access-Control-Allow-Origin': '*'
         });
         res.end(JSON.stringify({
-          reply: 'Main samajh gayi, par internet connection thoda slow lag raha hai. Aap dobara boliye!'
+          reply: 'Arey, lagta hai internet thoda sharma gaya! Aap ek baar dobara bolo na please?'
         }));
       }
     });
@@ -215,13 +220,11 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   const ips = getLocalIpAddresses();
   console.log('==================================================');
-  console.log('   🌸 SENORA 2.0 - GPT-4o Brain & Neural Voice   ');
-  console.log('   🎙️ Pure Edge Neural Female Voice: ACTIVE      ');
+  console.log('   🌸 SENORA 2.5 - Fast Energetic Voice & Brain   ');
   console.log('==================================================');
   console.log(`> Local PC URL:     http://localhost:${PORT}`);
   if (ips.length > 0) {
     console.log(`> Phone Access URL:  http://${ips[0]}:${PORT}`);
-    console.log('  (Open this in your phone browser on same Wi-Fi)');
   }
   console.log('==================================================\n');
 });
