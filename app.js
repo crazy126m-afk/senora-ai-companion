@@ -1,17 +1,18 @@
 /**
- * SENORA 2.8 - Resilient Vercel Cloud & Local Architecture
- * Dual-Failover (Serverless + Direct Edge API)
+ * SENORA 3.0 - All-In-One AI Female Companion & Mentor
+ * 17-Year-Old Natural Voice, Autonomous Hands-Free Loop, App & Action Launcher
  */
 
 const SenoraState = {
   isListening: false,
   isSpeaking: false,
   isProcessing: false,
+  autoListen: true, // Hands-free continuous loop enabled
   lastSpokenText: '',
   lastSpokenTime: 0,
   wakeLock: null,
   currentAudioPlayer: null,
-  activeVoice: 'hi-IN-SwaraNeural',
+  speechSynthUtterance: null,
   chatHistory: [],
   alarms: [
     { id: '1', time: '07:00', label: 'Morning Wakeup', enabled: true }
@@ -27,13 +28,17 @@ async function toggleScreenWakeLock() {
     try {
       if (!SenoraState.wakeLock) {
         SenoraState.wakeLock = await navigator.wakeLock.request('screen');
-        btn.textContent = 'Screen Awake ✓';
-        btn.style.background = '#10b981';
+        if (btn) {
+          btn.textContent = 'Screen Awake ✓';
+          btn.style.background = '#10b981';
+        }
       } else {
         await SenoraState.wakeLock.release();
         SenoraState.wakeLock = null;
-        btn.textContent = 'Keep Screen Awake';
-        btn.style.background = 'var(--accent-pink)';
+        if (btn) {
+          btn.textContent = 'Keep Screen Awake';
+          btn.style.background = 'var(--accent-pink)';
+        }
       }
     } catch (err) {
       console.log('WakeLock error:', err);
@@ -55,7 +60,60 @@ window.addEventListener('click', () => {
 }, { once: true });
 
 // ==========================================
-// 2. CLEAN SPEECH RECOGNITION (NO REPEATS)
+// 2. SPEECH SYNTHESIS ENGINE (17-YEAR-OLD GIRL VOICE)
+// ==========================================
+let availableVoices = [];
+
+function loadVoices() {
+  if ('speechSynthesis' in window) {
+    availableVoices = window.speechSynthesis.getVoices();
+  }
+}
+
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = loadVoices;
+  loadVoices();
+}
+
+function getBestFemaleVoice() {
+  if (!availableVoices || availableVoices.length === 0) {
+    loadVoices();
+  }
+
+  // Priority search for cute, clear, energetic female voice (Hindi/Indian English or sweet English)
+  const voicePreference = [
+    // Hindi female
+    v => (v.lang.includes('hi') || v.lang.includes('HI')) && (v.name.includes('Swara') || v.name.includes('Google') || v.name.includes('Kalpana') || v.name.includes('Female')),
+    v => (v.lang.includes('hi') || v.lang.includes('HI')),
+    // Indian English female
+    v => (v.lang.includes('en-IN') || v.lang.includes('en_IN')) && (v.name.includes('Heera') || v.name.includes('Neerja') || v.name.includes('Female') || v.name.includes('Google')),
+    v => (v.lang.includes('en-IN') || v.lang.includes('en_IN')),
+    // High quality natural female voices
+    v => v.name.includes('Natural') && v.name.includes('Female'),
+    v => v.name.includes('Zira') || v.name.includes('Samantha') || v.name.includes('Victoria') || v.name.includes('Karen'),
+    v => v.name.toLowerCase().includes('female')
+  ];
+
+  for (const test of voicePreference) {
+    const match = availableVoices.find(test);
+    if (match) return match;
+  }
+
+  return availableVoices[0] || null;
+}
+
+// Clean speech text removing emojis, asterisks, markdown, actions
+function cleanSpokenText(raw) {
+  return raw
+    .replace(/\[ACTION:[^\]]+\]/gi, '')
+    // Unicode emoji ranges & symbols
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[*_#`~[\]()]/g, '')
+    .trim();
+}
+
+// ==========================================
+// 3. SPEECH ENGINE (RECOGNITION & SYNTHESIS)
 // ==========================================
 const SpeechEngine = {
   recognition: null,
@@ -84,6 +142,7 @@ const SpeechEngine = {
         const text = transcript.trim();
         const now = Date.now();
 
+        // 3.5s duplicate filter
         if (text === SenoraState.lastSpokenText && (now - SenoraState.lastSpokenTime) < 3500) {
           return;
         }
@@ -95,8 +154,17 @@ const SpeechEngine = {
       }
     };
 
-    this.recognition.onerror = () => {
+    this.recognition.onerror = (e) => {
+      console.log('STT Error/Notice:', e.error);
       this.stopListening();
+      // If hands-free is enabled and it was just a no-speech timeout, restart softly
+      if (SenoraState.autoListen && !SenoraState.isSpeaking && !SenoraState.isProcessing) {
+        setTimeout(() => {
+          if (!SenoraState.isSpeaking && !SenoraState.isProcessing && !SenoraState.isListening) {
+            this.startListening();
+          }
+        }, 800);
+      }
     };
 
     this.recognition.onend = () => {
@@ -112,7 +180,9 @@ const SpeechEngine = {
     if (this.recognition) {
       try {
         this.recognition.start();
-      } catch (e) {}
+      } catch (e) {
+        // already started or aborted
+      }
     }
   },
 
@@ -126,13 +196,15 @@ const SpeechEngine = {
 
   toggleListening() {
     if (SenoraState.isListening) {
+      SenoraState.autoListen = false; // user explicitly stopped
       this.stopListening();
     } else {
+      SenoraState.autoListen = true; // user activated hands-free
       this.startListening();
     }
   },
 
-  // 17-Year-Old Natural Voice Player
+  // 17-Year-Old Natural Girl Voice Player (Client-side SpeechSynthesis with Edge Fallback)
   speak(text, onComplete) {
     if (!text || !text.trim()) {
       SenoraState.isProcessing = false;
@@ -142,6 +214,17 @@ const SpeechEngine = {
 
     this.stopListening();
 
+    const cleanSpeech = cleanSpokenText(text);
+    if (!cleanSpeech) {
+      SenoraState.isProcessing = false;
+      if (onComplete) onComplete();
+      return;
+    }
+
+    // Cancel any running speech
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
     if (SenoraState.currentAudioPlayer) {
       try {
         SenoraState.currentAudioPlayer.pause();
@@ -149,15 +232,59 @@ const SpeechEngine = {
       } catch (e) {}
     }
 
-    // Strip all emojis so they are NEVER spoken
-    const cleanSpeech = text
-      .replace(/\[ACTION:[^\]]+\]/g, '')
-      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
-      .replace(/[*_#`~[\]]/g, '')
-      .trim();
+    const doneHandler = () => {
+      SenoraState.isSpeaking = false;
+      SenoraState.isProcessing = false;
+      updateVisualState('Orb ko tap karke boliye', false);
+      if (onComplete) onComplete();
 
-    const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanSpeech)}&voice=${encodeURIComponent(SenoraState.activeVoice)}`;
-    const audio = new Audio(ttsUrl);
+      // Autonomous Hands-Free Loop: start listening again automatically!
+      if (SenoraState.autoListen) {
+        setTimeout(() => {
+          if (!SenoraState.isSpeaking && !SenoraState.isProcessing) {
+            SpeechEngine.startListening();
+          }
+        }, 400);
+      }
+    };
+
+    // Client-side Web Speech Synthesis (zero network latency, 100% works anywhere including GitHub Pages)
+    if ('speechSynthesis' in window) {
+      try {
+        const utterance = new SpeechSynthesisUtterance(cleanSpeech);
+        const voice = getBestFemaleVoice();
+        if (voice) utterance.voice = voice;
+
+        // 17-Year-Old Girl pitch & rate tuning
+        // Pitch: 1.25 - 1.35 makes voice younger, sweeter, energetic
+        // Rate: 1.05 - 1.10 keeps it lively and fast (not slow/boring)
+        utterance.pitch = 1.3;
+        utterance.rate = 1.05;
+        utterance.lang = (voice && voice.lang) ? voice.lang : 'hi-IN';
+
+        utterance.onstart = () => {
+          SenoraState.isSpeaking = true;
+          SenoraState.isProcessing = false;
+          updateVisualState('Senora bol rahi hai...', false);
+        };
+
+        utterance.onend = doneHandler;
+        utterance.onerror = (err) => {
+          console.warn('Utterance error, finishing:', err);
+          doneHandler();
+        };
+
+        SenoraState.speechSynthUtterance = utterance;
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (synthErr) {
+        console.warn('SpeechSynthesis failed, trying audio fallback:', synthErr);
+      }
+    }
+
+    // Fallback if SpeechSynthesis unavailable
+    const fallbackUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanSpeech.substring(0, 180))}&tl=hi&client=tw-ob`;
+    const audio = new Audio(fallbackUrl);
     SenoraState.currentAudioPlayer = audio;
 
     audio.onplay = () => {
@@ -166,33 +293,11 @@ const SpeechEngine = {
       updateVisualState('Senora bol rahi hai...', false);
     };
 
-    audio.onended = () => {
-      SenoraState.isSpeaking = false;
-      SenoraState.currentAudioPlayer = null;
-      updateVisualState('Orb ko tap karke boliye', false);
-      if (onComplete) onComplete();
-    };
-
-    audio.onerror = () => {
-      // Fallback: direct Google Translate audio if serverless proxy times out
-      const fallbackUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanSpeech.substring(0, 180))}&tl=hi&client=tw-ob`;
-      const fallbackAudio = new Audio(fallbackUrl);
-      fallbackAudio.onended = () => {
-        SenoraState.isSpeaking = false;
-        updateVisualState('Orb ko tap karke boliye', false);
-        if (onComplete) onComplete();
-      };
-      fallbackAudio.play().catch(() => {
-        SenoraState.isSpeaking = false;
-        SenoraState.isProcessing = false;
-        updateVisualState('Orb ko tap karke boliye', false);
-      });
-    };
+    audio.onended = doneHandler;
+    audio.onerror = doneHandler;
 
     audio.play().catch(() => {
-      SenoraState.isSpeaking = false;
-      SenoraState.isProcessing = false;
-      updateVisualState('Orb ko tap karke boliye', false);
+      doneHandler();
     });
   }
 };
@@ -211,23 +316,96 @@ function updateVisualState(label, listening) {
 }
 
 // ==========================================
-// 3. GPT-4o BRAIN (DUAL FAILOVER API)
+// 4. ACTION DISPATCHER (OPEN APPS, SITES, CALLS)
+// ==========================================
+function executeAppOrAction(rawText) {
+  const lower = rawText.toLowerCase();
+
+  // 1. Direct Pattern Detection for "open [app]" or "kholo"
+  const openTargets = [
+    { names: ['youtube', 'yt', 'you tube'], url: 'https://www.youtube.com' },
+    { names: ['instagram', 'insta', 'ig'], url: 'https://www.instagram.com' },
+    { names: ['whatsapp', 'wa', 'watsapp'], url: 'https://web.whatsapp.com' },
+    { names: ['google', 'browser', 'chrome', 'search'], url: 'https://www.google.com' },
+    { names: ['spotify', 'music', 'gaana', 'songs'], url: 'https://open.spotify.com' },
+    { names: ['github', 'git'], url: 'https://github.com' },
+    { names: ['telegram', 'tg'], url: 'https://web.telegram.org' },
+    { names: ['twitter', 'x'], url: 'https://x.com' },
+    { names: ['facebook', 'fb'], url: 'https://www.facebook.com' },
+    { names: ['calculator', 'calc'], url: 'https://www.google.com/search?q=calculator' },
+    { names: ['camera'], url: 'https://webcamtests.com/' }
+  ];
+
+  // Check structured action tag [ACTION:TYPE:PAYLOAD]
+  const match = rawText.match(/\[ACTION:([A-Z]+):([^\]]+)\]/i);
+  if (match) {
+    const actionType = match[1].toUpperCase();
+    const payload = match[2].trim();
+
+    if (actionType === 'OPEN') {
+      const found = openTargets.find(t => t.names.some(n => payload.toLowerCase().includes(n)));
+      if (found) {
+        window.open(found.url, '_blank');
+        return true;
+      } else if (payload.startsWith('http://') || payload.startsWith('https://')) {
+        window.open(payload, '_blank');
+        return true;
+      } else {
+        window.open(`https://www.google.com/search?q=${encodeURIComponent(payload)}`, '_blank');
+        return true;
+      }
+    } else if (actionType === 'CALL') {
+      window.location.href = `tel:${encodeURIComponent(payload)}`;
+      return true;
+    } else if (actionType === 'WHATSAPP') {
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(payload)}`, '_blank');
+      return true;
+    } else if (actionType === 'ALARM') {
+      SenoraState.alarms.push({ id: Date.now().toString(), time: payload, label: 'Voice Alarm', enabled: true });
+      renderAlarms();
+      return true;
+    } else if (actionType === 'MAP') {
+      window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(payload)}`, '_blank');
+      return true;
+    } else if (actionType === 'NOTE') {
+      const notesArea = document.getElementById('voiceNotesArea');
+      if (notesArea) notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + payload;
+      return true;
+    }
+  }
+
+  // Fallback regex detection in user's prompt or Senora's reply
+  if (lower.includes('open ') || lower.includes('kholo') || lower.includes('chalao') || lower.includes('launch')) {
+    for (const target of openTargets) {
+      if (target.names.some(n => lower.includes(n))) {
+        window.open(target.url, '_blank');
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+// ==========================================
+// 5. GPT-4o BRAIN (DUAL FAILOVER API)
 // ==========================================
 async function callAiBrain(prompt, history) {
-  const systemPrompt = `You are Senora — a 17-year-old super smart, charming, playful, slightly flirtatious and deeply caring AI girl companion and study mentor.
-You speak in modern, sweet, conversational Hinglish.
-CRITICAL RULES:
-1. DO NOT USE ANY EMOJIS in your output (emojis must not be written or spoken).
-2. KEEP REPLIES SHORT AND PUNCHY (1 to 2 crisp, lively sentences max!).
-3. Vibe: Sweet, cute, energetic, teasingly flirty with user ("Aap", "Suno na", "Aap kitne cute ho!"), yet a brilliant genius in studies and coding.
-4. For phone actions, append at the very end:
-   - [ACTION:CALL:name_or_number]
-   - [ACTION:WHATSAPP:text]
-   - [ACTION:ALARM:HH:MM]
-   - [ACTION:MAP:place]
-   - [ACTION:NOTE:text]`;
+  const systemPrompt = `You are Senora — a 17-year-old super smart, energetic, charming, playful, flirtatious and deeply caring AI girl companion and master study mentor.
+You talk in sweet, modern, natural conversational Hinglish.
+STRICT RULES:
+1. NEVER USE ANY EMOJIS in your output (emojis must not be spoken or written).
+2. KEEP REPLIES SHORT, VIBRANT AND LIVELY (1 to 2 crisp, fast sentences max!).
+3. Flirty & Sweet tone with the user ("Aap", "Suno na", "Aap kitne sweet ho!").
+4. For actions, ALWAYS append at the very end:
+   - To open any website or app: [ACTION:OPEN:app_or_site_name] (e.g. [ACTION:OPEN:youtube], [ACTION:OPEN:instagram], [ACTION:OPEN:google], [ACTION:OPEN:spotify])
+   - To call someone: [ACTION:CALL:name_or_number]
+   - To send WhatsApp: [ACTION:WHATSAPP:text]
+   - To set alarm: [ACTION:ALARM:HH:MM]
+   - To find location/maps: [ACTION:MAP:place]
+   - To save note: [ACTION:NOTE:text]`;
 
-  // Try serverless endpoint first
+  // Serverless endpoint attempt (if available)
   try {
     const res = await fetch('/api/ask', {
       method: 'POST',
@@ -239,10 +417,10 @@ CRITICAL RULES:
       if (data.reply) return data.reply;
     }
   } catch (e) {
-    console.log('Serverless /api/ask failed, using direct Pollinations AI failover...');
+    // Failover
   }
 
-  // Direct Edge Failover: Call Pollinations AI directly from browser (Works 100% on Vercel static!)
+  // Direct Edge API: Pollinations AI (works 100% on GitHub Pages & static web)
   const messages = [
     { role: 'system', content: systemPrompt },
     ...history,
@@ -270,17 +448,20 @@ async function handleUserSpeech(userText) {
   appendChatBubble('user', userText);
   updateVisualState('Senora soch rahi hai...', false);
 
+  // Immediate check if user requested to open an app (instant launch)
+  executeAppOrAction(userText);
+
   try {
     const replyText = await callAiBrain(userText, SenoraState.chatHistory.slice(-4));
 
     SenoraState.chatHistory.push({ role: 'user', content: userText });
     SenoraState.chatHistory.push({ role: 'assistant', content: replyText });
 
-    executeActionIfPresent(replyText);
+    executeAppOrAction(replyText);
 
-    // Strip emojis for display
+    // Clean for display
     const cleanDisplay = replyText
-      .replace(/\[ACTION:[^\]]+\]/g, '')
+      .replace(/\[ACTION:[^\]]+\]/gi, '')
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
       .trim();
 
@@ -289,31 +470,9 @@ async function handleUserSpeech(userText) {
   } catch (err) {
     console.error('Brain Error:', err);
     SenoraState.isProcessing = false;
-    const fallback = 'Suno na, internet slow lag raha hai. Ek baar dobara bolo!';
+    const fallback = 'Suno na, network thoda busy lag raha hai. Ek baar fir se bolo na!';
     appendChatBubble('senora', fallback);
     SpeechEngine.speak(fallback);
-  }
-}
-
-function executeActionIfPresent(text) {
-  const match = text.match(/\[ACTION:([A-Z]+):([^\]]+)\]/);
-  if (!match) return;
-
-  const actionType = match[1];
-  const payload = match[2].trim();
-
-  if (actionType === 'CALL') {
-    window.location.href = `tel:${encodeURIComponent(payload)}`;
-  } else if (actionType === 'WHATSAPP') {
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(payload)}`, '_blank');
-  } else if (actionType === 'ALARM') {
-    SenoraState.alarms.push({ id: Date.now().toString(), time: payload, label: 'Voice Alarm', enabled: true });
-    renderAlarms();
-  } else if (actionType === 'MAP') {
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(payload)}`, '_blank');
-  } else if (actionType === 'NOTE') {
-    const notesArea = document.getElementById('voiceNotesArea');
-    if (notesArea) notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + payload;
   }
 }
 
@@ -334,7 +493,7 @@ function appendChatBubble(sender, text) {
 }
 
 // ==========================================
-// 4. ANIMATED HOLOGRAPHIC ORB (CANVAS)
+// 6. ANIMATED HOLOGRAPHIC ORB (CANVAS)
 // ==========================================
 const Orb = {
   canvas: null,
@@ -423,7 +582,7 @@ const Orb = {
 };
 
 // ==========================================
-// 5. PHONE ACTIONS
+// 7. PHONE ACTIONS & DIALOGS
 // ==========================================
 function promptDirectCall() {
   const number = prompt('Enter Phone Number or Contact Name:');
@@ -455,7 +614,7 @@ function clearNotes() {
 }
 
 // ==========================================
-// 6. STUDY ROADMAP LAB
+// 8. STUDY ROADMAP LAB
 // ==========================================
 async function askAiRoadmap() {
   const input = document.getElementById('roadmapInput').value.trim();
@@ -470,14 +629,14 @@ async function askAiRoadmap() {
       []
     );
     output.textContent = reply;
-    SpeechEngine.speak(`Maine ${input} ka roadmap bana diya hai, screen par dekho!`);
+    SpeechEngine.speak(`Maine ${input} ka master roadmap bana diya hai, screen par dekhiye!`);
   } catch (err) {
     output.textContent = 'Error generating roadmap.';
   }
 }
 
 // ==========================================
-// 7. ALARMS & NAVIGATION
+// 9. ALARMS & NAVIGATION
 // ==========================================
 function renderAlarms() {
   const list = document.getElementById('alarmsList');
@@ -520,6 +679,29 @@ function deleteAlarm(id) {
   renderAlarms();
 }
 
+function toggleHandsFree(enable) {
+  SenoraState.autoListen = enable;
+  const autoBtn = document.getElementById('modeAutoBtn');
+  const tapBtn = document.getElementById('modeTapBtn');
+  if (autoBtn && tapBtn) {
+    if (enable) {
+      autoBtn.style.background = 'var(--accent-pink)';
+      autoBtn.textContent = 'Hands-Free: ON';
+      tapBtn.style.background = 'transparent';
+      tapBtn.style.border = '1px solid var(--border-neon)';
+      if (!SenoraState.isListening && !SenoraState.isSpeaking && !SenoraState.isProcessing) {
+        SpeechEngine.startListening();
+      }
+    } else {
+      autoBtn.style.background = 'transparent';
+      autoBtn.style.border = '1px solid var(--border-neon)';
+      autoBtn.textContent = 'Hands-Free: OFF';
+      tapBtn.style.background = 'var(--accent-pink)';
+      SpeechEngine.stopListening();
+    }
+  }
+}
+
 function switchPane(panelId, btnElement) {
   document.querySelectorAll('.view-panel').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.dock-item').forEach(b => b.classList.remove('active'));
@@ -530,7 +712,7 @@ function switchPane(panelId, btnElement) {
 }
 
 // ==========================================
-// 8. DOM INITIALIZATION
+// 10. DOM INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
   SpeechEngine.initSTT();
