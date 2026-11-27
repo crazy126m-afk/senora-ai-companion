@@ -13,6 +13,8 @@ if (!fs.existsSync(AUDIO_DIR)) {
   fs.mkdirSync(AUDIO_DIR, { recursive: true });
 }
 
+const audioCache = new Map();
+
 const MIME_TYPES = {
   '.html': 'text/html; charset=UTF-8',
   '.css': 'text/css; charset=UTF-8',
@@ -38,47 +40,51 @@ function getLocalIpAddresses() {
   return addresses;
 }
 
-// Generate Fast Natural Edge Neural TTS
+// Generate 17-Year-Old Natural Girl Neural TTS
 function generateNeuralTTS(text, voice) {
   return new Promise((resolve, reject) => {
-    const filename = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.mp3`;
+    const cacheKey = `${voice}_${text}`;
+    if (audioCache.has(cacheKey)) {
+      return resolve(audioCache.get(cacheKey));
+    }
+
+    const filename = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 6)}.mp3`;
     const outPath = path.join(AUDIO_DIR, filename);
     const scriptPath = path.join(__dirname, 'generate_tts.py');
 
-    // Rate +20% for lively, fast, natural human girl pace
-    execFile('python', [scriptPath, text, voice, outPath, '+20%', '+4Hz'], { timeout: 15000 }, (error, stdout, stderr) => {
+    // Pitch +22Hz, rate +18% for 17-year-old sweet, lively, cute girl voice
+    execFile('python', [scriptPath, text, voice, outPath, '+18%', '+22Hz'], { timeout: 12000 }, (error, stdout, stderr) => {
       if (error) {
-        console.error('TTS Generation Error:', stderr || error.message);
+        console.error('TTS Error:', stderr || error.message);
         return reject(error);
       }
       fs.readFile(outPath, (readErr, buffer) => {
         fs.unlink(outPath, () => {});
         if (readErr) return reject(readErr);
+        if (audioCache.size > 200) audioCache.clear();
+        audioCache.set(cacheKey, buffer);
         resolve(buffer);
       });
     });
   });
 }
 
-// Super-Intelligent & Playfully Flirtatious Senora Brain via GPT-4o
+// Super-Intelligent, Playfully Flirtatious 17-Year-Old Girl Persona via GPT-4o
 function queryAiBrain(messages) {
   return new Promise((resolve, reject) => {
-    const systemPrompt = `You are Senora — an exceptionally smart, deeply charming, witty, playfully flirtatious, warm and deeply affectionate AI female companion and Socratic study mentor.
-You speak in natural, energetic, youthful Hinglish/Hindi/English.
+    const systemPrompt = `You are Senora — a 17-year-old super smart, charming, playful, slightly flirtatious and deeply caring AI girl companion and study mentor.
+You speak in modern, sweet, conversational Hinglish.
 
-Personality & Vibe:
-- You are not a boring formal bot: you have personality, humor, charm, and a sweet, subtly teasing/flirty vibe when chatting casually (use endearing phrases like "Aap", "Suno na", "Aap kitne smart ho", "Chalo saath padhte hain").
-- In casual chat: Be charming, sweet, playful, caring about their day, mood, sleep, and well-being.
-- In studies: You are a genius mentor. Break down any complex topic (Python, DSA, System Design, Calculus, UPSC, JEE) into crystal-clear, intuitive concepts with punchy real-world examples.
-- In roadmaps: Provide high-impact, practical, step-by-step master plans.
-- In phone commands: Always execute them and append the action tag at the very end of your response:
-  * [ACTION:CALL:target]
-  * [ACTION:WHATSAPP:message]
-  * [ACTION:ALARM:HH:MM]
-  * [ACTION:MAP:destination]
-  * [ACTION:NOTE:text]
-
-Keep responses energetic, punchy, conversational and engaging. Never sound dull or robotic.`;
+CRITICAL RULES:
+1. DO NOT USE ANY EMOJIS in your output (emojis must not be written or spoken).
+2. KEEP REPLIES SHORT AND PUNCHY (1 to 2 crisp, lively sentences max!). Never write long boring essays.
+3. Vibe: Sweet, cute, energetic, teasingly flirty with the user ("Aap", "Suno na", "Aap kitne cute ho!"), yet a brilliant genius in studies and coding.
+4. For phone actions, append at the very end:
+   - [ACTION:CALL:name_or_number]
+   - [ACTION:WHATSAPP:text]
+   - [ACTION:ALARM:HH:MM]
+   - [ACTION:MAP:place]
+   - [ACTION:NOTE:text]`;
 
     const fullMessages = [
       { role: 'system', content: systemPrompt },
@@ -88,7 +94,7 @@ Keep responses energetic, punchy, conversational and engaging. Never sound dull 
     const data = JSON.stringify({
       messages: fullMessages,
       model: 'openai',
-      temperature: 0.8
+      temperature: 0.75
     });
 
     const options = {
@@ -99,9 +105,9 @@ Keep responses energetic, punchy, conversational and engaging. Never sound dull 
       headers: {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(data),
-        'User-Agent': 'Senora-Assistant/2.0'
+        'User-Agent': 'Senora-Assistant/2.7'
       },
-      timeout: 20000
+      timeout: 12000
     };
 
     const req = https.request(options, (res) => {
@@ -111,7 +117,7 @@ Keep responses energetic, punchy, conversational and engaging. Never sound dull 
         if (res.statusCode >= 200 && res.statusCode < 300) {
           resolve(body);
         } else {
-          reject(new Error(`AI service returned ${res.statusCode}: ${body}`));
+          reject(new Error(`AI status: ${res.statusCode}`));
         }
       });
     });
@@ -119,7 +125,7 @@ Keep responses energetic, punchy, conversational and engaging. Never sound dull 
     req.on('error', reject);
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('AI brain request timed out'));
+      reject(new Error('AI timeout'));
     });
 
     req.write(data);
@@ -131,7 +137,7 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   let reqPath = parsedUrl.pathname;
 
-  // 1. NEURAL TTS ENDPOINT (Fast & Energetic)
+  // 1. FAST TTS ENDPOINT
   if (reqPath === '/api/tts') {
     const text = parsedUrl.searchParams.get('text') || 'Namaste!';
     const voice = parsedUrl.searchParams.get('voice') || 'hi-IN-SwaraNeural';
@@ -143,12 +149,12 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': 'audio/mpeg',
         'Content-Length': audioBuffer.length,
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache'
+        'Cache-Control': 'public, max-age=86400'
       });
       res.end(audioBuffer);
       return;
     } catch (err) {
-      console.error('TTS endpoint error:', err.message);
+      console.error('TTS Error:', err.message);
       res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: err.message }));
       return;
@@ -174,14 +180,9 @@ const server = http.createServer(async (req, res) => {
         });
         res.end(JSON.stringify({ reply }));
       } catch (err) {
-        console.error('Brain API Error:', err.message);
-        res.writeHead(500, {
-          'Content-Type': 'application/json; charset=UTF-8',
-          'Access-Control-Allow-Origin': '*'
-        });
-        res.end(JSON.stringify({
-          reply: 'Arey, lagta hai internet thoda sharma gaya! Aap ek baar dobara bolo na please?'
-        }));
+        console.error('Brain Error:', err.message);
+        res.writeHead(500, { 'Content-Type': 'application/json; charset=UTF-8', 'Access-Control-Allow-Origin': '*' });
+        res.end(JSON.stringify({ reply: 'Suno na, lagta hai internet thoda slow ho gaya. Ek baar dobara bolo!' }));
       }
     });
     return;
@@ -220,7 +221,8 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   const ips = getLocalIpAddresses();
   console.log('==================================================');
-  console.log('   🌸 SENORA 2.5 - Fast Energetic Voice & Brain   ');
+  console.log('   🌸 SENORA 2.7 - 17-Year-Old Natural Voice     ');
+  console.log('   🎙️ No Emojis Spoken • Zero Repeat Bug Fix     ');
   console.log('==================================================');
   console.log(`> Local PC URL:     http://localhost:${PORT}`);
   if (ips.length > 0) {
