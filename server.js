@@ -3,9 +3,15 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { execFile } = require('child_process');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = __dirname;
+const AUDIO_DIR = path.join(__dirname, 'audio_cache');
+
+if (!fs.existsSync(AUDIO_DIR)) {
+  fs.mkdirSync(AUDIO_DIR, { recursive: true });
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=UTF-8',
@@ -32,31 +38,87 @@ function getLocalIpAddresses() {
   return addresses;
 }
 
-// Fetch audio chunk from Google Neural TTS
-function fetchGoogleTtsChunk(text, lang) {
+// Generate Edge Neural TTS via Python script
+function generateNeuralTTS(text, voice) {
   return new Promise((resolve, reject) => {
-    const encoded = encodeURIComponent(text);
-    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=${encodeURIComponent(lang)}&client=tw-ob`;
+    const filename = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.mp3`;
+    const outPath = path.join(AUDIO_DIR, filename);
+    const scriptPath = path.join(__dirname, 'generate_tts.py');
 
-    const req = https.get(url, {
+    execFile('python', [scriptPath, text, voice, outPath], { timeout: 15000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('TTS Generation Error:', stderr || error.message);
+        return reject(error);
+      }
+      fs.readFile(outPath, (readErr, buffer) => {
+        // Clean up file asynchronously
+        fs.unlink(outPath, () => {});
+        if (readErr) return reject(readErr);
+        resolve(buffer);
+      });
+    });
+  });
+}
+
+// GPT-4o Brain via Pollinations AI
+function queryAiBrain(messages) {
+  return new Promise((resolve, reject) => {
+    const systemPrompt = `You are Senora, an ultra-smart, deeply knowledgeable, warm and charming AI female companion and Socratic study mentor.
+You speak fluent natural Hindi/Hinglish/English.
+You understand everything: programming, algorithms, system design, math, science, history, UPSC/JEE preparation, study roadmaps, and phone commands.
+When user asks for a study roadmap, provide an inspiring, structured step-by-step roadmap.
+When user gives a phone command (e.g. call, whatsapp, alarm, navigate, note), acknowledge warmly and append exactly one action tag at the very end of your reply:
+- For call: [ACTION:CALL:target_name_or_number]
+- For whatsapp: [ACTION:WHATSAPP:message_text]
+- For alarm: [ACTION:ALARM:HH:MM]
+- For maps/navigation: [ACTION:MAP:place_name]
+- For note: [ACTION:NOTE:note_text]
+Keep replies concise, conversational, clear and human-like so they sound pleasant when spoken aloud.`;
+
+    const fullMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages
+    ];
+
+    const data = JSON.stringify({
+      messages: fullMessages,
+      model: 'openai',
+      temperature: 0.7
+    });
+
+    const options = {
+      hostname: 'text.pollinations.ai',
+      port: 443,
+      path: '/',
+      method: 'POST',
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Referer': 'https://translate.google.com/'
-      }
-    }, (res) => {
-      if (res.statusCode !== 200) {
-        return reject(new Error(`TTS Service returned status ${res.statusCode}`));
-      }
-      const chunks = [];
-      res.on('data', chunk => chunks.push(chunk));
-      res.on('end', () => resolve(Buffer.concat(chunks)));
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(data),
+        'User-Agent': 'Senora-Assistant/2.0'
+      },
+      timeout: 20000
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          resolve(body);
+        } else {
+          reject(new Error(`AI service returned ${res.statusCode}: ${body}`));
+        }
+      });
     });
 
     req.on('error', reject);
-    req.setTimeout(8000, () => {
+    req.on('timeout', () => {
       req.destroy();
-      reject(new Error('TTS request timed out'));
+      reject(new Error('AI brain request timed out'));
     });
+
+    req.write(data);
+    req.end();
   });
 }
 
@@ -64,45 +126,63 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   let reqPath = parsedUrl.pathname;
 
-  // NEURAL TTS API ENDPOINT
+  // 1. NEURAL TTS ENDPOINT
   if (reqPath === '/api/tts') {
-    const text = parsedUrl.searchParams.get('text') || 'Hello';
-    const lang = parsedUrl.searchParams.get('lang') || 'hi';
+    const text = parsedUrl.searchParams.get('text') || 'Namaste!';
+    const voice = parsedUrl.searchParams.get('voice') || 'hi-IN-SwaraNeural';
 
     try {
-      // Split into sentences if text is long (> 150 chars)
-      const clean = text.replace(/[*_#`~[\]]/g, '').trim();
-      const chunks = clean.match(/[^.!?।\n]+[.!?।\n]*/g) || [clean];
-
-      const audioBuffers = [];
-      for (const sentence of chunks) {
-        const trimmed = sentence.trim();
-        if (trimmed.length > 0) {
-          // Truncate individual query to 180 chars max for safety
-          const sub = trimmed.substring(0, 180);
-          const buf = await fetchGoogleTtsChunk(sub, lang);
-          audioBuffers.push(buf);
-        }
-      }
-
-      const combinedAudio = Buffer.concat(audioBuffers);
+      const clean = text.replace(/\[ACTION:[^\]]+\]/g, '').trim();
+      const audioBuffer = await generateNeuralTTS(clean, voice);
       res.writeHead(200, {
         'Content-Type': 'audio/mpeg',
-        'Content-Length': combinedAudio.length,
+        'Content-Length': audioBuffer.length,
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'public, max-age=86400'
+        'Cache-Control': 'no-cache'
       });
-      res.end(combinedAudio);
+      res.end(audioBuffer);
       return;
     } catch (err) {
-      console.error('TTS Proxy Error:', err.message);
+      console.error('TTS endpoint error:', err.message);
       res.writeHead(500, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: err.message }));
       return;
     }
   }
 
-  // STATIC FILE SERVING
+  // 2. AI BRAIN ENDPOINT
+  if (reqPath === '/api/ask' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body);
+        const userPrompt = payload.prompt;
+        const history = payload.history || [];
+
+        const messages = [...history, { role: 'user', content: userPrompt }];
+        const reply = await queryAiBrain(messages);
+
+        res.writeHead(200, {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(JSON.stringify({ reply }));
+      } catch (err) {
+        console.error('Brain API Error:', err.message);
+        res.writeHead(500, {
+          'Content-Type': 'application/json; charset=UTF-8',
+          'Access-Control-Allow-Origin': '*'
+        });
+        res.end(JSON.stringify({
+          reply: 'Main samajh gayi, par internet connection thoda slow lag raha hai. Aap dobara boliye!'
+        }));
+      }
+    });
+    return;
+  }
+
+  // 3. STATIC FILES
   if (reqPath === '/' || reqPath === '') {
     reqPath = '/index.html';
   }
@@ -117,7 +197,7 @@ const server = http.createServer(async (req, res) => {
         res.end('404 Not Found');
       } else {
         res.writeHead(500, { 'Content-Type': 'text/plain; charset=UTF-8' });
-        res.end('500 Server Error: ' + err.code);
+        res.end('500 Server Error');
       }
       return;
     }
@@ -135,8 +215,8 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
   const ips = getLocalIpAddresses();
   console.log('==================================================');
-  console.log('   🌸 SENORA - AI Companion & Phone Controller   ');
-  console.log('   🎙️ Neural Human Female Voice: ACTIVE         ');
+  console.log('   🌸 SENORA 2.0 - GPT-4o Brain & Neural Voice   ');
+  console.log('   🎙️ Pure Edge Neural Female Voice: ACTIVE      ');
   console.log('==================================================');
   console.log(`> Local PC URL:     http://localhost:${PORT}`);
   if (ips.length > 0) {
