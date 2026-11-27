@@ -359,7 +359,7 @@ function openAppOrUrl(targetUrl, fallbackUrl) {
 }
 
 function executeAppOrAction(rawText) {
-  if (!rawText) return false;
+  if (!rawText) return null;
   const lower = rawText.toLowerCase();
 
   // 1. WhatsApp Native Phone App vs Web
@@ -377,7 +377,7 @@ function executeAppOrAction(rawText) {
       : `https://api.whatsapp.com/send?text=${textMsg}`;
 
     openAppOrUrl(nativeAppUri, webFallback);
-    return true;
+    return { url: webFallback, label: 'Open WhatsApp', icon: 'fa-brands fa-whatsapp' };
   }
 
   // 2. YouTube App or Website
@@ -387,46 +387,47 @@ function executeAppOrAction(rawText) {
     const nativeUri = q ? `vnd.youtube://results?search_query=${q}` : `vnd.youtube://`;
     const webUri = q ? `https://www.youtube.com/results?search_query=${q}` : `https://www.youtube.com`;
     openAppOrUrl(nativeUri, webUri);
-    return true;
+    return { url: webUri, label: 'Open YouTube', icon: 'fa-brands fa-youtube' };
   }
 
   // 3. Instagram Native App
   if (lower.includes('instagram') || lower.includes('insta') || lower.includes('ig ')) {
     openAppOrUrl('instagram://app', 'https://www.instagram.com');
-    return true;
+    return { url: 'https://www.instagram.com', label: 'Open Instagram', icon: 'fa-brands fa-instagram' };
   }
 
   // 4. Spotify Music
   if (lower.includes('spotify') || lower.includes('gaana') || lower.includes('music') || lower.includes('song')) {
     openAppOrUrl('spotify://', 'https://open.spotify.com');
-    return true;
+    return { url: 'https://open.spotify.com', label: 'Open Spotify', icon: 'fa-brands fa-spotify' };
   }
 
   // 5. Phone Call
   if (lower.includes('call ') || lower.includes('[action:call:') || lower.includes('dial ')) {
     const callMatch = rawText.match(/\[ACTION:CALL:([^\]]+)\]/i) || rawText.match(/(?:call|dial)\s+([+\d\w\s]+)/i);
     if (callMatch) {
-      window.location.href = `tel:${encodeURIComponent(callMatch[1].trim())}`;
-      return true;
+      const num = callMatch[1].trim();
+      window.location.href = `tel:${encodeURIComponent(num)}`;
+      return { url: `tel:${encodeURIComponent(num)}`, label: `Call ${num}`, icon: 'fa-solid fa-phone' };
     }
   }
 
   // 6. Google Search / Browser
   if (lower.includes('google') || lower.includes('chrome') || lower.includes('browser')) {
     openAppOrUrl('googlechrome://', 'https://www.google.com');
-    return true;
+    return { url: 'https://www.google.com', label: 'Open Google', icon: 'fa-brands fa-google' };
   }
 
   // 7. Telegram
   if (lower.includes('telegram') || lower.includes('tg ')) {
     openAppOrUrl('tg://', 'https://web.telegram.org');
-    return true;
+    return { url: 'https://web.telegram.org', label: 'Open Telegram', icon: 'fa-brands fa-telegram' };
   }
 
   // 8. Twitter / X
   if (lower.includes('twitter') || lower.includes(' x ')) {
     openAppOrUrl('twitter://', 'https://x.com');
-    return true;
+    return { url: 'https://x.com', label: 'Open X / Twitter', icon: 'fa-brands fa-x-twitter' };
   }
 
   // 9. Navigation / GPS
@@ -434,7 +435,7 @@ function executeAppOrAction(rawText) {
     const mapMatch = rawText.match(/\[ACTION:MAP:([^\]]+)\]/i) || rawText.match(/navigate to (.+)/i);
     const dest = mapMatch ? encodeURIComponent(mapMatch[1].trim()) : '';
     openAppOrUrl(`geo:0,0?q=${dest}`, `https://www.google.com/maps/search/?api=1&query=${dest}`);
-    return true;
+    return { url: `https://www.google.com/maps/search/?api=1&query=${dest}`, label: 'Open Maps', icon: 'fa-solid fa-map-location-dot' };
   }
 
   // 10. Alarm
@@ -443,7 +444,7 @@ function executeAppOrAction(rawText) {
     const time = alarmMatch ? alarmMatch[1].trim() : '07:00';
     SenoraState.alarms.push({ id: Date.now().toString(), time, label: 'Voice Alarm', enabled: true });
     renderAlarms();
-    return true;
+    return null;
   }
 
   // 11. Notes
@@ -452,11 +453,11 @@ function executeAppOrAction(rawText) {
     if (noteMatch) {
       const notesArea = document.getElementById('voiceNotesArea');
       if (notesArea) notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + noteMatch[1].trim();
-      return true;
+      return null;
     }
   }
 
-  return false;
+  return null;
 }
 
 // ==========================================
@@ -729,7 +730,7 @@ async function handleUserSpeech(userText) {
   updateVisualState('Senora soch rahi hai...', false);
 
   // Immediate check if user requested to open an app (instant launch)
-  executeAppOrAction(userText);
+  const immediateAction = executeAppOrAction(userText);
 
   try {
     const replyText = await callAiBrain(userText, SenoraState.chatHistory.slice(-4));
@@ -737,7 +738,8 @@ async function handleUserSpeech(userText) {
     SenoraState.chatHistory.push({ role: 'user', content: userText });
     SenoraState.chatHistory.push({ role: 'assistant', content: replyText });
 
-    executeAppOrAction(replyText);
+    const replyAction = executeAppOrAction(replyText);
+    const activeAction = immediateAction || replyAction;
 
     // Clean for display
     const cleanDisplay = replyText
@@ -745,18 +747,18 @@ async function handleUserSpeech(userText) {
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
       .trim();
 
-    appendChatBubble('senora', cleanDisplay);
+    appendChatBubble('senora', cleanDisplay, activeAction);
     SpeechEngine.speak(cleanDisplay);
   } catch (err) {
     console.error('Brain Error:', err);
     SenoraState.isProcessing = false;
-    const fallback = 'Suno na, network thoda busy lag raha hai. Ek baar fir se bolo na!';
-    appendChatBubble('senora', fallback);
+    const fallback = generateSmartReply(userText);
+    appendChatBubble('senora', fallback, immediateAction);
     SpeechEngine.speak(fallback);
   }
 }
 
-function appendChatBubble(sender, text) {
+function appendChatBubble(sender, text, actionButton = null) {
   const container = document.getElementById('chatFeed');
   if (!container) return;
 
@@ -767,7 +769,18 @@ function appendChatBubble(sender, text) {
     ? '<div class="bubble-sender"><i class="fa-solid fa-sparkles"></i> Senora</div>'
     : '<div class="bubble-sender"><i class="fa-solid fa-user"></i> You</div>';
 
-  bubble.innerHTML = `${senderTag}<span>${text}</span>`;
+  let btnHtml = '';
+  if (actionButton && actionButton.url) {
+    btnHtml = `
+      <div style="margin-top: 8px;">
+        <a href="${actionButton.url}" target="_blank" class="luxury-btn" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; font-size: 12px; text-decoration: none; border-radius: 12px; background: linear-gradient(135deg, #10b981, #059669); color: #fff;">
+          <i class="${actionButton.icon || 'fa-solid fa-arrow-up-right-from-square'}"></i> ${actionButton.label || 'Open Now'}
+        </a>
+      </div>
+    `;
+  }
+
+  bubble.innerHTML = `${senderTag}<span>${text}</span>${btnHtml}`;
   container.appendChild(bubble);
   container.scrollTop = container.scrollHeight;
 }
