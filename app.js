@@ -1,5 +1,6 @@
 /**
- * SENORA 2.7 - 17-Year-Old Natural Voice & Zero Repeat Fix
+ * SENORA 2.8 - Resilient Vercel Cloud & Local Architecture
+ * Dual-Failover (Serverless + Direct Edge API)
  */
 
 const SenoraState = {
@@ -67,7 +68,7 @@ const SpeechEngine = {
     }
 
     this.recognition = new SpeechRecognition();
-    this.recognition.continuous = false; // Prevents endless Android Google Voice beeping
+    this.recognition.continuous = false;
     this.recognition.interimResults = false;
     this.recognition.lang = 'hi-IN';
 
@@ -83,7 +84,6 @@ const SpeechEngine = {
         const text = transcript.trim();
         const now = Date.now();
 
-        // Prevent duplicate firing within 3.5 seconds
         if (text === SenoraState.lastSpokenText && (now - SenoraState.lastSpokenTime) < 3500) {
           return;
         }
@@ -132,7 +132,7 @@ const SpeechEngine = {
     }
   },
 
-  // 17-Year-Old Natural Voice Player (Never falls back to robot voice!)
+  // 17-Year-Old Natural Voice Player
   speak(text, onComplete) {
     if (!text || !text.trim()) {
       SenoraState.isProcessing = false;
@@ -149,7 +149,7 @@ const SpeechEngine = {
       } catch (e) {}
     }
 
-    // Strip emojis completely so they are NEVER spoken aloud
+    // Strip all emojis so they are NEVER spoken
     const cleanSpeech = text
       .replace(/\[ACTION:[^\]]+\]/g, '')
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
@@ -174,9 +174,19 @@ const SpeechEngine = {
     };
 
     audio.onerror = () => {
-      SenoraState.isSpeaking = false;
-      SenoraState.isProcessing = false;
-      updateVisualState('Orb ko tap karke boliye', false);
+      // Fallback: direct Google Translate audio if serverless proxy times out
+      const fallbackUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanSpeech.substring(0, 180))}&tl=hi&client=tw-ob`;
+      const fallbackAudio = new Audio(fallbackUrl);
+      fallbackAudio.onended = () => {
+        SenoraState.isSpeaking = false;
+        updateVisualState('Orb ko tap karke boliye', false);
+        if (onComplete) onComplete();
+      };
+      fallbackAudio.play().catch(() => {
+        SenoraState.isSpeaking = false;
+        SenoraState.isProcessing = false;
+        updateVisualState('Orb ko tap karke boliye', false);
+      });
     };
 
     audio.play().catch(() => {
@@ -201,8 +211,57 @@ function updateVisualState(label, listening) {
 }
 
 // ==========================================
-// 3. BRAIN DISPATCHER (NO DUPLICATES)
+// 3. GPT-4o BRAIN (DUAL FAILOVER API)
 // ==========================================
+async function callAiBrain(prompt, history) {
+  const systemPrompt = `You are Senora — a 17-year-old super smart, charming, playful, slightly flirtatious and deeply caring AI girl companion and study mentor.
+You speak in modern, sweet, conversational Hinglish.
+CRITICAL RULES:
+1. DO NOT USE ANY EMOJIS in your output (emojis must not be written or spoken).
+2. KEEP REPLIES SHORT AND PUNCHY (1 to 2 crisp, lively sentences max!).
+3. Vibe: Sweet, cute, energetic, teasingly flirty with user ("Aap", "Suno na", "Aap kitne cute ho!"), yet a brilliant genius in studies and coding.
+4. For phone actions, append at the very end:
+   - [ACTION:CALL:name_or_number]
+   - [ACTION:WHATSAPP:text]
+   - [ACTION:ALARM:HH:MM]
+   - [ACTION:MAP:place]
+   - [ACTION:NOTE:text]`;
+
+  // Try serverless endpoint first
+  try {
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, history })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.reply) return data.reply;
+    }
+  } catch (e) {
+    console.log('Serverless /api/ask failed, using direct Pollinations AI failover...');
+  }
+
+  // Direct Edge Failover: Call Pollinations AI directly from browser (Works 100% on Vercel static!)
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history,
+    { role: 'user', content: prompt }
+  ];
+
+  const directRes = await fetch('https://text.pollinations.ai/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages,
+      model: 'openai',
+      temperature: 0.75
+    })
+  });
+
+  return await directRes.text();
+}
+
 async function handleUserSpeech(userText) {
   if (!userText || !userText.trim()) return;
   if (SenoraState.isProcessing || SenoraState.isSpeaking) return;
@@ -212,24 +271,14 @@ async function handleUserSpeech(userText) {
   updateVisualState('Senora soch rahi hai...', false);
 
   try {
-    const res = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: userText,
-        history: SenoraState.chatHistory.slice(-4)
-      })
-    });
-
-    const data = await res.json();
-    const replyText = data.reply || 'Main sun rahi hoon, boliye!';
+    const replyText = await callAiBrain(userText, SenoraState.chatHistory.slice(-4));
 
     SenoraState.chatHistory.push({ role: 'user', content: userText });
     SenoraState.chatHistory.push({ role: 'assistant', content: replyText });
 
     executeActionIfPresent(replyText);
 
-    // Strip emojis for display as well
+    // Strip emojis for display
     const cleanDisplay = replyText
       .replace(/\[ACTION:[^\]]+\]/g, '')
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
@@ -240,7 +289,7 @@ async function handleUserSpeech(userText) {
   } catch (err) {
     console.error('Brain Error:', err);
     SenoraState.isProcessing = false;
-    const fallback = 'Suno na, lagta hai internet slow hai. Ek baar dobara bolo!';
+    const fallback = 'Suno na, internet slow lag raha hai. Ek baar dobara bolo!';
     appendChatBubble('senora', fallback);
     SpeechEngine.speak(fallback);
   }
@@ -416,16 +465,11 @@ async function askAiRoadmap() {
   output.textContent = 'Generating quick roadmap...';
 
   try {
-    const res = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: `Create a concise, punchy, step-by-step master roadmap for "${input}". Keep it clear with 4 bullet stages. No emojis.`,
-        history: []
-      })
-    });
-    const data = await res.json();
-    output.textContent = data.reply;
+    const reply = await callAiBrain(
+      `Create a concise, punchy, step-by-step master roadmap for "${input}". Keep it clear with 4 bullet stages. No emojis.`,
+      []
+    );
+    output.textContent = reply;
     SpeechEngine.speak(`Maine ${input} ka roadmap bana diya hai, screen par dekho!`);
   } catch (err) {
     output.textContent = 'Error generating roadmap.';
