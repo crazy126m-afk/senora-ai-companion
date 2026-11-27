@@ -160,6 +160,43 @@
         </div>
         <div id="alarmsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
       </section>
+
+      <!-- 5. BRAIN & API SETTINGS (UNLIMITED SPEED) -->
+      <section id="panel-settings" class="view-panel">
+        <div class="glass-box" style="padding: 18px;">
+          <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">
+            <i class="fa-solid fa-sliders" style="color: var(--accent-pink);"></i> AI Brain &amp; Unlimited Mode
+          </h3>
+          <p style="font-size: 12px; color: var(--text-dim);">
+            Jab free public limit reach ho jaye, aap apni free Groq / OpenRouter / OpenAI key daal kar unlimited 24/7 bina kisi delay ke baat kar sakte hain.
+          </p>
+        </div>
+
+        <div class="glass-box" style="padding: 18px; display: flex; flex-direction: column; gap: 14px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px; display: block;">Select AI Engine:</label>
+            <select id="engineSelect" class="luxury-input" style="width: 100%; background: #1e1b4b; cursor: pointer;" onchange="saveEngineSettings()">
+              <option value="auto">Auto Smart Failover (Default)</option>
+              <option value="groq">Groq (Ultra-Fast 500 tokens/sec - Free Key)</option>
+              <option value="openrouter">OpenRouter (Free Key / Free Models)</option>
+              <option value="openai">OpenAI (GPT-4o / GPT-4o-mini)</option>
+              <option value="gemini">Google Gemini API (Free Key)</option>
+            </select>
+          </div>
+
+          <div id="apiKeyGroup">
+            <label style="font-size: 12px; font-weight: 600; color: #cbd5e1; margin-bottom: 4px; display: block;">Custom API Key (Optional):</label>
+            <input type="password" id="customApiKeyInput" class="luxury-input" placeholder="Paste your API key (stored safely in your device only)..." />
+            <p style="font-size: 11px; color: var(--text-dim); margin-top: 4px;">
+              Tip: <a href="https://console.groq.com/keys" target="_blank" style="color: var(--accent-cyan); text-decoration: underline;">Groq Console</a> se 1 second me 100% free key milti hai (14,400 replies/day).
+            </p>
+          </div>
+
+          <button class="luxury-btn" onclick="saveEngineSettings(true)" style="background: linear-gradient(135deg, #10b981, #059669);">
+            <i class="fa-solid fa-floppy-disk"></i> Save Settings
+          </button>
+        </div>
+      </section>
     </main>
 
     <!-- Bottom Navigation Dock -->
@@ -179,6 +216,10 @@
       <button class="dock-item" onclick="switchPane('panel-alarms', this)">
         <i class="fa-solid fa-bell"></i>
         <span>Alarms</span>
+      </button>
+      <button class="dock-item" onclick="switchPane('panel-settings', this)">
+        <i class="fa-solid fa-gear"></i>
+        <span>Settings</span>
       </button>
     </nav>
   </div>
