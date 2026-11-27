@@ -13,29 +13,33 @@
 </head>
 <body>
   <div class="viewport-frame">
-    <!-- Luxury Header -->
+    <!-- Header -->
     <header class="app-header">
       <div class="brand-wrap">
         <div class="brand-icon">S</div>
         <div class="brand-info">
           <h1>SENORA</h1>
-          <p id="brainStatusDesc">GPT-4o Brain &amp; Neural Voice</p>
+          <p id="brainStatusDesc">GPT-4o Brain &amp; Fast Voice</p>
         </div>
       </div>
       <div class="status-badge" id="voiceStatusBadge">
         <span class="status-indicator"></span>
-        <span id="listeningPillLabel">Listening</span>
+        <span id="listeningPillLabel">Ready</span>
       </div>
     </header>
 
-    <!-- Hands-Free Wake Bar -->
+    <!-- Mode Selector & Wake Bar (Optimized for Android) -->
     <div class="handsfree-bar">
-      <div>
-        <i class="fa-solid fa-bolt" style="color: var(--accent-pink); margin-right: 6px;"></i>
-        <span>Zero-Tap Voice Loop: <b>Active</b></span>
+      <div style="display: flex; gap: 6px;">
+        <button id="modeTapBtn" class="handsfree-btn" style="background: var(--accent-pink); padding: 4px 10px;" onclick="toggleMode('tap')">
+          Tap to Talk
+        </button>
+        <button id="modeAutoBtn" class="handsfree-btn" style="background: transparent; border: 1px solid var(--border-neon); padding: 4px 10px;" onclick="toggleMode('auto')">
+          Auto Loop
+        </button>
       </div>
-      <button class="handsfree-btn" id="wakeLockBtn" onclick="toggleScreenWakeLock()">
-        Screen Kept Awake ✓
+      <button class="handsfree-btn" id="wakeLockBtn" style="padding: 4px 10px;" onclick="toggleScreenWakeLock()">
+        Screen Awake ✓
       </button>
     </div>
 
@@ -46,29 +50,25 @@
         <div class="orb-arena">
           <canvas id="orbCanvas" width="300" height="300"></canvas>
           <div class="orb-state-label">
-            <i class="fa-solid fa-waveform-lines" style="color: var(--accent-pink);"></i>
-            <span id="orbStateText">Senora is listening... Bas bolo!</span>
+            <i class="fa-solid fa-microphone-lines" style="color: var(--accent-pink);"></i>
+            <span id="orbStateText">Orb ko tap karke boliye</span>
           </div>
         </div>
 
-        <!-- Real Chat & Thought Stream -->
+        <!-- Chat Stream (No repeats) -->
         <div class="glass-box chat-scroll" id="chatFeed">
           <div class="chat-bubble senora" id="senoraBubble">
             <div class="bubble-sender"><i class="fa-solid fa-sparkles"></i> Senora</div>
-            <span id="senoraSpeechText">Namaste! Main Senora hoon. Ab mere paas real GPT-4o brain aur ultra-realistic human female voice hai. Aap kisi bhi study topic, exam roadmap, doubts, ya phone control ke baare me baat kar sakte hain. Bas bolte rahiye, main continuously sun rahi hoon!</span>
-          </div>
-          <div class="chat-bubble user" id="userBubble" style="display: none;">
-            <div class="bubble-sender"><i class="fa-solid fa-user"></i> You</div>
-            <span id="userSpeechText">...</span>
+            <span id="senoraSpeechText">Namaste! Main Senora hoon. Maine voice speed badha di hai aur repeat hone wala issue fix kar diya hai. Orb ko tap karke boliye, main turant jawab dungi!</span>
           </div>
         </div>
 
         <!-- Voice Command Input Strip -->
         <div class="command-strip">
-          <button class="mic-action-btn listening" id="micBtn" title="Microphone Active">
+          <button class="mic-action-btn" id="micBtn" title="Tap to Speak">
             <i class="fa-solid fa-microphone" id="micIcon"></i>
           </button>
-          <input type="text" class="strip-input" id="textPromptInput" placeholder="Bolo ya likho (e.g. DSA roadmap, Call..., Alarm...)" />
+          <input type="text" class="strip-input" id="textPromptInput" placeholder="Bolo ya likho..." />
           <button class="luxury-btn" id="sendTextBtn" style="padding: 9px 14px; border-radius: 20px;">
             <i class="fa-solid fa-arrow-up"></i>
           </button>
@@ -82,28 +82,28 @@
             <i class="fa-solid fa-brain" style="color: var(--accent-cyan);"></i> Socratic Study Mentor &amp; Roadmaps
           </h3>
           <p style="font-size: 12px; color: var(--text-dim);">
-            AI se kisi bhi topic ya exam ka detailed practical roadmap aur concepts samjhein.
+            AI se kisi bhi topic ya exam ka quick roadmap aur concepts samjhein.
           </p>
         </div>
 
         <div class="glass-box" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
           <div style="font-size: 13.5px; font-weight: 700;">AI Roadmap Generator</div>
           <div style="display: flex; gap: 8px;">
-            <input type="text" id="roadmapInput" class="luxury-input" placeholder="Topic (e.g. Python Full Stack, DSA, UPSC)..." />
+            <input type="text" id="roadmapInput" class="luxury-input" placeholder="Topic (e.g. Python, DSA, Web Dev)..." />
             <button class="luxury-btn" onclick="askAiRoadmap()">Generate</button>
           </div>
           <div id="roadmapOutput" style="font-size: 13px; line-height: 1.6; white-space: pre-wrap; color: #e2e8f0; margin-top: 6px;"></div>
         </div>
       </section>
 
-      <!-- 3. PHONE VOICE CONTROLS -->
+      <!-- 3. PHONE CONTROLS -->
       <section id="panel-phone" class="view-panel">
         <div class="glass-box" style="padding: 18px;">
           <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">
             <i class="fa-solid fa-mobile-screen" style="color: var(--accent-pink);"></i> Phone Voice Controller
           </h3>
           <p style="font-size: 12px; color: var(--text-dim);">
-            Bol kar direct actions trigger karein ya neeche click karein.
+            Direct actions trigger karein.
           </p>
         </div>
 
@@ -111,13 +111,13 @@
           <div class="glass-box grid-card" onclick="promptDirectCall()">
             <div class="card-icon icon-call"><i class="fa-solid fa-phone"></i></div>
             <div class="card-title">Direct Call</div>
-            <div class="card-desc">Bolo "Call [Name/Number]"</div>
+            <div class="card-desc">Bolo "Call [Name]"</div>
           </div>
 
           <div class="glass-box grid-card" onclick="promptDirectWhatsApp()">
             <div class="card-icon icon-wa"><i class="fa-brands fa-whatsapp"></i></div>
             <div class="card-title">WhatsApp</div>
-            <div class="card-desc">Bolo "WhatsApp [Message]"</div>
+            <div class="card-desc">Bolo "WhatsApp [Text]"</div>
           </div>
 
           <div class="glass-box grid-card" onclick="promptNavigation()">
@@ -144,43 +144,21 @@
               <button class="luxury-btn" style="padding: 5px 12px; font-size: 11px; background: #334155;" onclick="clearNotes()">Clear</button>
             </div>
           </div>
-          <textarea id="voiceNotesArea" class="luxury-input" style="height: 110px; resize: none;" placeholder="Bolo: 'Note likho [baat]' ya yaha type karein..."></textarea>
+          <textarea id="voiceNotesArea" class="luxury-input" style="height: 110px; resize: none;" placeholder="Notes..."></textarea>
         </div>
       </section>
 
-      <!-- 4. ALARMS & ROUTINES -->
+      <!-- 4. ALARMS -->
       <section id="panel-alarms" class="view-panel">
         <div class="glass-box" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
-          <div style="font-size: 13.5px; font-weight: 700;">Set Voice / Anti-Snooze Alarm</div>
+          <div style="font-size: 13.5px; font-weight: 700;">Set Voice Alarm</div>
           <div style="display: flex; gap: 10px;">
             <input type="time" id="alarmTimeInput" class="luxury-input" style="font-size: 16px; font-weight: 700;" value="07:00" />
-            <input type="text" id="alarmLabelInput" class="luxury-input" placeholder="Label (e.g. Study Time)" />
+            <input type="text" id="alarmLabelInput" class="luxury-input" placeholder="Label..." />
           </div>
           <button class="luxury-btn" onclick="addNewAlarm()">Set Alarm</button>
         </div>
         <div id="alarmsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
-      </section>
-
-      <!-- 5. VOICE STUDIO -->
-      <section id="panel-voice-settings" class="view-panel">
-        <div class="glass-box" style="padding: 18px; display: flex; flex-direction: column; gap: 16px;">
-          <h3 style="font-size: 16px; font-weight: 700;">
-            <i class="fa-solid fa-sliders" style="color: var(--accent-pink);"></i> Pure Neural Female Voice Studio
-          </h3>
-
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            <label style="font-size: 12.5px; color: var(--text-dim);">Select Real Neural Voice:</label>
-            <select id="neuralVoiceSelect" class="luxury-input">
-              <option value="hi-IN-SwaraNeural" selected>Swara Neural (Natural Hindi / Hinglish Female)</option>
-              <option value="en-IN-NeerjaNeural">Neerja Neural (Natural Indian English Female)</option>
-              <option value="en-US-AriaNeural">Aria Neural (Natural Global English Female)</option>
-            </select>
-          </div>
-
-          <button class="luxury-btn" onclick="testNeuralVoice()">
-            <i class="fa-solid fa-play"></i> Test Pure Natural Voice
-          </button>
-        </div>
       </section>
     </main>
 
@@ -201,10 +179,6 @@
       <button class="dock-item" onclick="switchPane('panel-alarms', this)">
         <i class="fa-solid fa-bell"></i>
         <span>Alarms</span>
-      </button>
-      <button class="dock-item" onclick="switchPane('panel-voice-settings', this)">
-        <i class="fa-solid fa-sliders"></i>
-        <span>Voice</span>
       </button>
     </nav>
   </div>
