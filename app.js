@@ -388,8 +388,29 @@ function executeAppOrAction(rawText) {
 }
 
 // ==========================================
-// 5. GPT-4o BRAIN (DUAL FAILOVER API)
+// 5. GPT-4o MULTI-ENGINE BRAIN (UNLIMITED & FAILOVER POOL)
 // ==========================================
+const BrainConfig = {
+  engine: localStorage.getItem('senora_engine') || 'auto',
+  apiKey: localStorage.getItem('senora_apikey') || ''
+};
+
+function saveEngineSettings(showToast = false) {
+  const sel = document.getElementById('engineSelect');
+  const keyInput = document.getElementById('customApiKeyInput');
+  if (sel) {
+    BrainConfig.engine = sel.value;
+    localStorage.setItem('senora_engine', sel.value);
+  }
+  if (keyInput) {
+    BrainConfig.apiKey = keyInput.value.trim();
+    localStorage.setItem('senora_apikey', BrainConfig.apiKey);
+  }
+  if (showToast) {
+    alert('Settings saved! Senora ready.');
+  }
+}
+
 async function callAiBrain(prompt, history) {
   const systemPrompt = `You are Senora — a 17-year-old super smart, energetic, charming, playful, flirtatious and deeply caring AI girl companion and master study mentor.
 You talk in sweet, modern, natural conversational Hinglish.
@@ -405,7 +426,114 @@ STRICT RULES:
    - To find location/maps: [ACTION:MAP:place]
    - To save note: [ACTION:NOTE:text]`;
 
-  // Serverless endpoint attempt (if available)
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...history,
+    { role: 'user', content: prompt }
+  ];
+
+  // 1. If User has custom Groq key (Blazing Fast 500 tok/sec, 14,400 free req/day)
+  if ((BrainConfig.engine === 'groq' || BrainConfig.engine === 'auto') && BrainConfig.apiKey && BrainConfig.apiKey.startsWith('gsk_')) {
+    try {
+      const gRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${BrainConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages,
+          temperature: 0.75,
+          max_tokens: 180
+        })
+      });
+      if (gRes.ok) {
+        const gData = await gRes.json();
+        if (gData.choices && gData.choices[0] && gData.choices[0].message) {
+          return gData.choices[0].message.content;
+        }
+      }
+    } catch (e) {
+      console.warn('Groq failed, continuing to next provider...', e);
+    }
+  }
+
+  // 2. If User configured OpenRouter (Free models or custom key)
+  if ((BrainConfig.engine === 'openrouter' || BrainConfig.engine === 'auto') && BrainConfig.apiKey && BrainConfig.apiKey.startsWith('sk-or-')) {
+    try {
+      const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${BrainConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'meta-llama/llama-3.2-3b-instruct:free',
+          messages,
+          temperature: 0.75,
+          max_tokens: 180
+        })
+      });
+      if (orRes.ok) {
+        const orData = await orRes.json();
+        if (orData.choices && orData.choices[0] && orData.choices[0].message) {
+          return orData.choices[0].message.content;
+        }
+      }
+    } catch (e) {
+      console.warn('OpenRouter failed...', e);
+    }
+  }
+
+  // 3. If User configured OpenAI key
+  if ((BrainConfig.engine === 'openai' || BrainConfig.engine === 'auto') && BrainConfig.apiKey && BrainConfig.apiKey.startsWith('sk-proj-') || (BrainConfig.apiKey && BrainConfig.apiKey.startsWith('sk-'))) {
+    try {
+      const oaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${BrainConfig.apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages,
+          temperature: 0.75,
+          max_tokens: 180
+        })
+      });
+      if (oaiRes.ok) {
+        const oaiData = await oaiRes.json();
+        if (oaiData.choices && oaiData.choices[0] && oaiData.choices[0].message) {
+          return oaiData.choices[0].message.content;
+        }
+      }
+    } catch (e) {
+      console.warn('OpenAI failed...', e);
+    }
+  }
+
+  // 4. If User configured Gemini key
+  if (BrainConfig.engine === 'gemini' && BrainConfig.apiKey) {
+    try {
+      const gemRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${BrainConfig.apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: `${systemPrompt}\nUser: ${prompt}` }] }]
+        })
+      });
+      if (gemRes.ok) {
+        const gemData = await gemRes.json();
+        const cand = gemData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (cand) return cand;
+      }
+    } catch (e) {
+      console.warn('Gemini failed...', e);
+    }
+  }
+
+  // 5. Serverless endpoint failover (if running on Node / Vercel server)
   try {
     const res = await fetch('/api/ask', {
       method: 'POST',
@@ -414,30 +542,32 @@ STRICT RULES:
     });
     if (res.ok) {
       const data = await res.json();
-      if (data.reply) return data.reply;
+      if (data.reply && !data.reply.includes('Free limit reached')) return data.reply;
     }
-  } catch (e) {
-    // Failover
-  }
+  } catch (e) {}
 
-  // Direct Edge API: Pollinations AI (works 100% on GitHub Pages & static web)
-  const messages = [
-    { role: 'system', content: systemPrompt },
-    ...history,
-    { role: 'user', content: prompt }
-  ];
+  // 6. Public Direct Failover (Pollinations AI with rate limit detection)
+  try {
+    const directRes = await fetch('https://text.pollinations.ai/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages,
+        model: 'openai-fast',
+        seed: Math.floor(Math.random() * 100000)
+      })
+    });
+    if (directRes.ok) {
+      const text = await directRes.text();
+      // If free limit rate limit text returned
+      if (text.includes('Free limit reached') || text.includes('1 reply every 45')) {
+        return 'Suno na, free public API ka cooldown chal raha hai! Settings tab me jaakar apni free Groq ya OpenAI key paste kar do, fir bilkul unlimited chalega!';
+      }
+      return text;
+    }
+  } catch (e) {}
 
-  const directRes = await fetch('https://text.pollinations.ai/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messages,
-      model: 'openai',
-      temperature: 0.75
-    })
-  });
-
-  return await directRes.text();
+  return 'Aapki aawaz kitni pyaari hai! Main sun rahi hoon, boliye na!';
 }
 
 async function handleUserSpeech(userText) {
@@ -733,6 +863,11 @@ document.addEventListener('DOMContentLoaded', () => {
       textInput.value = '';
     }
   };
+
+  const engineSel = document.getElementById('engineSelect');
+  const keyInput = document.getElementById('customApiKeyInput');
+  if (engineSel) engineSel.value = BrainConfig.engine;
+  if (keyInput && BrainConfig.apiKey) keyInput.value = BrainConfig.apiKey;
 
   sendBtn.addEventListener('click', submitText);
   textInput.addEventListener('keypress', (e) => {
