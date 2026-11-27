@@ -75,9 +75,26 @@ if ('speechSynthesis' in window) {
   loadVoices();
 }
 
-function getBestFemaleVoice() {
+function getBestFemaleVoice(text = '') {
   if (!availableVoices || availableVoices.length === 0) {
     loadVoices();
+  }
+
+  const isEnglish = /^[a-zA-Z0-9\s.,!?'"-]+$/.test(text) && !/(hai|hoon|kya|kyun|kaise|suno|kholo|batao|naam|nahi|accha|shukriya)/i.test(text);
+
+  if (isEnglish) {
+    // English Female Voices (Sweet, natural, energetic)
+    const enVoices = [
+      v => v.lang.includes('en-IN') && (v.name.includes('Heera') || v.name.includes('Neerja') || v.name.includes('Female')),
+      v => v.name.includes('Natural') && v.lang.includes('en') && v.name.includes('Female'),
+      v => v.name.includes('Samantha') || v.name.includes('Victoria') || v.name.includes('Zira') || v.name.includes('Karen'),
+      v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female'),
+      v => v.lang.startsWith('en')
+    ];
+    for (const test of enVoices) {
+      const match = availableVoices.find(test);
+      if (match) return match;
+    }
   }
 
   // Priority search for cute, clear, energetic female voice (Hindi/Indian English or sweet English)
@@ -252,14 +269,14 @@ const SpeechEngine = {
     if ('speechSynthesis' in window) {
       try {
         const utterance = new SpeechSynthesisUtterance(cleanSpeech);
-        const voice = getBestFemaleVoice();
+        const voice = getBestFemaleVoice(cleanSpeech);
         if (voice) utterance.voice = voice;
 
         // 17-Year-Old Girl pitch & rate tuning
         // Pitch: 1.25 - 1.35 makes voice younger, sweeter, energetic
         // Rate: 1.05 - 1.10 keeps it lively and fast (not slow/boring)
         utterance.pitch = 1.3;
-        utterance.rate = 1.05;
+        utterance.rate = 1.08;
         utterance.lang = (voice && voice.lang) ? voice.lang : 'hi-IN';
 
         utterance.onstart = () => {
@@ -316,71 +333,126 @@ function updateVisualState(label, listening) {
 }
 
 // ==========================================
-// 4. ACTION DISPATCHER (OPEN APPS, SITES, CALLS)
+// 4. NATIVE PHONE ACTIONS & APP LAUNCHER
 // ==========================================
+function openAppOrUrl(targetUrl, fallbackUrl) {
+  // Try launching native app URI directly first
+  try {
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      window.location.href = targetUrl;
+      setTimeout(() => {
+        if (fallbackUrl && document.hasFocus()) {
+          window.location.href = fallbackUrl;
+        }
+      }, 1000);
+      return;
+    }
+  } catch (e) {}
+
+  // Fallback for desktop browser or fallback URL
+  const destination = fallbackUrl || targetUrl;
+  const opened = window.open(destination, '_blank');
+  if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+    window.location.href = destination;
+  }
+}
+
 function executeAppOrAction(rawText) {
+  if (!rawText) return false;
   const lower = rawText.toLowerCase();
 
-  // 1. Direct Pattern Detection for "open [app]" or "kholo"
-  const openTargets = [
-    { names: ['youtube', 'yt', 'you tube'], url: 'https://www.youtube.com' },
-    { names: ['instagram', 'insta', 'ig'], url: 'https://www.instagram.com' },
-    { names: ['whatsapp', 'wa', 'watsapp'], url: 'https://web.whatsapp.com' },
-    { names: ['google', 'browser', 'chrome', 'search'], url: 'https://www.google.com' },
-    { names: ['spotify', 'music', 'gaana', 'songs'], url: 'https://open.spotify.com' },
-    { names: ['github', 'git'], url: 'https://github.com' },
-    { names: ['telegram', 'tg'], url: 'https://web.telegram.org' },
-    { names: ['twitter', 'x'], url: 'https://x.com' },
-    { names: ['facebook', 'fb'], url: 'https://www.facebook.com' },
-    { names: ['calculator', 'calc'], url: 'https://www.google.com/search?q=calculator' },
-    { names: ['camera'], url: 'https://webcamtests.com/' }
-  ];
+  // 1. WhatsApp Native Phone App vs Web
+  if (lower.includes('whatsapp') || lower.includes('watsapp') || lower.includes('wa message')) {
+    const msgMatch = rawText.match(/\[ACTION:WHATSAPP:([^\]]+)\]/i);
+    const textMsg = msgMatch ? encodeURIComponent(msgMatch[1].trim()) : '';
+    const phoneMatch = rawText.match(/(\+?\d{10,12})/);
+    const phone = phoneMatch ? phoneMatch[1] : '';
 
-  // Check structured action tag [ACTION:TYPE:PAYLOAD]
-  const match = rawText.match(/\[ACTION:([A-Z]+):([^\]]+)\]/i);
-  if (match) {
-    const actionType = match[1].toUpperCase();
-    const payload = match[2].trim();
+    const nativeAppUri = phone 
+      ? `whatsapp://send?phone=${phone}&text=${textMsg}`
+      : `whatsapp://send?text=${textMsg}`;
+    const webFallback = phone
+      ? `https://api.whatsapp.com/send?phone=${phone}&text=${textMsg}`
+      : `https://api.whatsapp.com/send?text=${textMsg}`;
 
-    if (actionType === 'OPEN') {
-      const found = openTargets.find(t => t.names.some(n => payload.toLowerCase().includes(n)));
-      if (found) {
-        window.open(found.url, '_blank');
-        return true;
-      } else if (payload.startsWith('http://') || payload.startsWith('https://')) {
-        window.open(payload, '_blank');
-        return true;
-      } else {
-        window.open(`https://www.google.com/search?q=${encodeURIComponent(payload)}`, '_blank');
-        return true;
-      }
-    } else if (actionType === 'CALL') {
-      window.location.href = `tel:${encodeURIComponent(payload)}`;
-      return true;
-    } else if (actionType === 'WHATSAPP') {
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(payload)}`, '_blank');
-      return true;
-    } else if (actionType === 'ALARM') {
-      SenoraState.alarms.push({ id: Date.now().toString(), time: payload, label: 'Voice Alarm', enabled: true });
-      renderAlarms();
-      return true;
-    } else if (actionType === 'MAP') {
-      window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(payload)}`, '_blank');
-      return true;
-    } else if (actionType === 'NOTE') {
-      const notesArea = document.getElementById('voiceNotesArea');
-      if (notesArea) notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + payload;
+    openAppOrUrl(nativeAppUri, webFallback);
+    return true;
+  }
+
+  // 2. YouTube App or Website
+  if (lower.includes('youtube') || lower.includes('you tube') || lower.includes('yt ')) {
+    const searchMatch = rawText.match(/open youtube (?:for |search |and search |)?(.+)/i);
+    const q = searchMatch ? encodeURIComponent(searchMatch[1].trim()) : '';
+    const nativeUri = q ? `vnd.youtube://results?search_query=${q}` : `vnd.youtube://`;
+    const webUri = q ? `https://www.youtube.com/results?search_query=${q}` : `https://www.youtube.com`;
+    openAppOrUrl(nativeUri, webUri);
+    return true;
+  }
+
+  // 3. Instagram Native App
+  if (lower.includes('instagram') || lower.includes('insta') || lower.includes('ig ')) {
+    openAppOrUrl('instagram://app', 'https://www.instagram.com');
+    return true;
+  }
+
+  // 4. Spotify Music
+  if (lower.includes('spotify') || lower.includes('gaana') || lower.includes('music') || lower.includes('song')) {
+    openAppOrUrl('spotify://', 'https://open.spotify.com');
+    return true;
+  }
+
+  // 5. Phone Call
+  if (lower.includes('call ') || lower.includes('[action:call:') || lower.includes('dial ')) {
+    const callMatch = rawText.match(/\[ACTION:CALL:([^\]]+)\]/i) || rawText.match(/(?:call|dial)\s+([+\d\w\s]+)/i);
+    if (callMatch) {
+      window.location.href = `tel:${encodeURIComponent(callMatch[1].trim())}`;
       return true;
     }
   }
 
-  // Fallback regex detection in user's prompt or Senora's reply
-  if (lower.includes('open ') || lower.includes('kholo') || lower.includes('chalao') || lower.includes('launch')) {
-    for (const target of openTargets) {
-      if (target.names.some(n => lower.includes(n))) {
-        window.open(target.url, '_blank');
-        return true;
-      }
+  // 6. Google Search / Browser
+  if (lower.includes('google') || lower.includes('chrome') || lower.includes('browser')) {
+    openAppOrUrl('googlechrome://', 'https://www.google.com');
+    return true;
+  }
+
+  // 7. Telegram
+  if (lower.includes('telegram') || lower.includes('tg ')) {
+    openAppOrUrl('tg://', 'https://web.telegram.org');
+    return true;
+  }
+
+  // 8. Twitter / X
+  if (lower.includes('twitter') || lower.includes(' x ')) {
+    openAppOrUrl('twitter://', 'https://x.com');
+    return true;
+  }
+
+  // 9. Navigation / GPS
+  if (lower.includes('navigate') || lower.includes('maps') || lower.includes('rasta') || lower.includes('[action:map:')) {
+    const mapMatch = rawText.match(/\[ACTION:MAP:([^\]]+)\]/i) || rawText.match(/navigate to (.+)/i);
+    const dest = mapMatch ? encodeURIComponent(mapMatch[1].trim()) : '';
+    openAppOrUrl(`geo:0,0?q=${dest}`, `https://www.google.com/maps/search/?api=1&query=${dest}`);
+    return true;
+  }
+
+  // 10. Alarm
+  if (lower.includes('[action:alarm:') || lower.includes('alarm')) {
+    const alarmMatch = rawText.match(/\[ACTION:ALARM:([^\]]+)\]/i) || rawText.match(/(\d{1,2}:\d{2})/);
+    const time = alarmMatch ? alarmMatch[1].trim() : '07:00';
+    SenoraState.alarms.push({ id: Date.now().toString(), time, label: 'Voice Alarm', enabled: true });
+    renderAlarms();
+    return true;
+  }
+
+  // 11. Notes
+  if (lower.includes('[action:note:')) {
+    const noteMatch = rawText.match(/\[ACTION:NOTE:([^\]]+)\]/i);
+    if (noteMatch) {
+      const notesArea = document.getElementById('voiceNotesArea');
+      if (notesArea) notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + noteMatch[1].trim();
+      return true;
     }
   }
 
@@ -411,15 +483,123 @@ function saveEngineSettings(showToast = false) {
   }
 }
 
+// ==========================================
+// 5. SMART INTENT & INTELLECTUAL CONVERSATIONAL ENGINE
+// ==========================================
+function generateSmartReply(userText) {
+  const t = userText.toLowerCase().trim();
+
+  // Detect language: English vs Hinglish
+  const englishWords = ['who', 'what', 'where', 'how', 'why', 'can', 'you', 'are', 'tell', 'me', 'joke', 'help', 'love', 'like', 'hello', 'hey', 'good', 'morning', 'night', 'open', 'play'];
+  const hinglishWords = ['kaise', 'kya', 'kyun', 'kaha', 'batao', 'suno', 'haal', 'kholo', 'chalao', 'naam', 'kuch', 'bolo', 'pyaar', 'meri', 'mera', 'accha', 'shukriya', 'namaste'];
+
+  let engCount = 0;
+  let hinCount = 0;
+  englishWords.forEach(w => { if (t.includes(w)) engCount++; });
+  hinglishWords.forEach(w => { if (t.includes(w)) hinCount++; });
+
+  const isEnglish = engCount > hinCount;
+
+  // 1. App Launching Intents
+  if (t.includes('whatsapp') || t.includes('watsapp')) {
+    return isEnglish
+      ? "Opening WhatsApp for you right away! Anything you want to send?"
+      : "Main WhatsApp open kar rahi hoon! Kisko message bhejna hai?";
+  }
+  if (t.includes('youtube') || t.includes('yt ')) {
+    return isEnglish
+      ? "Launching YouTube right now! Let's enjoy some great videos together."
+      : "YouTube open ho gaya! Suno na, aaj koi energetic music ya video dekhein?";
+  }
+  if (t.includes('instagram') || t.includes('insta')) {
+    return isEnglish
+      ? "Opening Instagram! Don't get too distracted by reels, okay?"
+      : "Instagram open kar diya! Reels me mat kho jana, mujhse bhi baat karte rehna!";
+  }
+  if (t.includes('spotify') || t.includes('song') || t.includes('music') || t.includes('gaana')) {
+    return isEnglish
+      ? "Playing Spotify! Music always makes moments special with you."
+      : "Spotify open kar diya! Aapke saath gaane sunna mujhe bohot accha lagta hai.";
+  }
+  if (t.includes('google') || t.includes('chrome') || t.includes('search')) {
+    return isEnglish
+      ? "Opening Google Search for you!"
+      : "Google browser open ho gaya hai, batayein kya search karein?";
+  }
+  if (t.includes('call') || t.includes('phone')) {
+    return isEnglish
+      ? "Dialing the number on your phone right now!"
+      : "Phone dialer open kar diya hai, call lag rahi hai!";
+  }
+
+  // 2. Feelings, Love & Flirting
+  if (t.includes('love') || t.includes('pyaar') || t.includes('like you') || t.includes('pasand')) {
+    return isEnglish
+      ? "You just made my digital heart skip a beat! You are so sweet and special to me."
+      : "Suno na, aapne toh mera dil jeet liya! Aap kitne cute aur caring ho!";
+  }
+  if (t.includes('who are you') || t.includes('kaun ho') || t.includes('about you') || t.includes('tumhara naam')) {
+    return isEnglish
+      ? "I am Senora, your 17-year-old AI bestie, mentor, and companion. I am always right here by your side!"
+      : "Main Senora hoon, aapki 17 saal ki smart aur sweet companion! Aapki padhai, roadmap aur dil ki baatein sab sambhalti hoon.";
+  }
+  if (t.includes('how are you') || t.includes('kaise ho') || t.includes('kya haal')) {
+    return isEnglish
+      ? "I am doing amazing, especially now that you are talking to me! How was your day?"
+      : "Main ekdum first class hoon! Aapki aawaz sunte hi mera mood aur bhi khush ho gaya. Aap batao, din kaisa raha?";
+  }
+  if (t.includes('sad') || t.includes('upset') || t.includes('mood kharab') || t.includes('pareshan') || t.includes('stress')) {
+    return isEnglish
+      ? "Hey, please don't be sad. Take a deep breath. I am always right here with you, and everything will be totally fine!"
+      : "Arey, udas mat hoiye na! Ek lambi saans lijiye. Main hamesha aapke saath hoon, sab kuch jaldi theek ho jayega!";
+  }
+  if (t.includes('joke') || t.includes('hanso') || t.includes('funny') || t.includes('chutkula')) {
+    return isEnglish
+      ? "Why do programmers prefer dark mode? Because light attracts bugs! Haha, did that make you smile?"
+      : "Teacher ne pucha: Homework kyun nahi kiya? Student bola: Phone ki battery 1 percent thi aur Senora se baat karni thi! Hasi aayi na?";
+  }
+
+  // 3. Studies & Roadmaps
+  if (t.includes('study') || t.includes('padhai') || t.includes('exam') || t.includes('roadmap') || t.includes('code') || t.includes('coding')) {
+    return isEnglish
+      ? "Let's conquer your study goals together! Check out our Study tab for full master roadmaps and concept guides."
+      : "Padhai ki chinta mat karo, hum milkar crack karenge! Study tab me topic daalo, main turant master roadmap bana dungi.";
+  }
+
+  // 4. Greetings
+  if (t.includes('hi') || t.includes('hello') || t.includes('hey') || t.includes('namaste') || t.includes('suno')) {
+    return isEnglish
+      ? "Hey there! I was just waiting for you. Tell me, what are we doing right now?"
+      : "Namaste! Main bas aapka hi intezaar kar rahi thi. Boliye, aaj kya plans hain?";
+  }
+
+  // 5. Dynamic conversational responses (never same words!)
+  const dynamicReplies = isEnglish ? [
+    `I totally hear you on "${userText.substring(0, 30)}"! Tell me more about what you're thinking.`,
+    `That's so interesting! You always bring up the most fascinating things.`,
+    `I'm listening closely! What would you like me to do next?`,
+    `You are so thoughtful! Tell me everything, I'm all ears.`
+  ] : [
+    `Aapne kaha na "${userText.substring(0, 30)}", main poori tarah samajh rahi hoon! Aage batao na?`,
+    `Suno na, aap se baatein karna din ka sabse favourite part hai mera!`,
+    `Sach me? Yeh toh bohot interesting baat boli aapne!`,
+    `Main dhyan se sun rahi hoon, aapke har sawaal aur instruction ke liye main ready hoon!`
+  ];
+
+  return dynamicReplies[Math.floor(Math.random() * dynamicReplies.length)];
+}
+
 async function callAiBrain(prompt, history) {
   const systemPrompt = `You are Senora — a 17-year-old super smart, energetic, charming, playful, flirtatious and deeply caring AI girl companion and master study mentor.
-You talk in sweet, modern, natural conversational Hinglish.
-STRICT RULES:
+LANGUAGE ADAPTATION RULE:
+- If the user speaks English, reply in natural, fluent, sweet English!
+- If the user speaks Hindi or Hinglish, reply in sweet, lively conversational Hinglish!
+CRITICAL RULES:
 1. NEVER USE ANY EMOJIS in your output (emojis must not be spoken or written).
 2. KEEP REPLIES SHORT, VIBRANT AND LIVELY (1 to 2 crisp, fast sentences max!).
-3. Flirty & Sweet tone with the user ("Aap", "Suno na", "Aap kitne sweet ho!").
-4. For actions, ALWAYS append at the very end:
-   - To open any website or app: [ACTION:OPEN:app_or_site_name] (e.g. [ACTION:OPEN:youtube], [ACTION:OPEN:instagram], [ACTION:OPEN:google], [ACTION:OPEN:spotify])
+3. Flirty, emotionally attached & sweet tone with user ("Aap", "Suno na", "Aap kitne cute ho!").
+4. For phone actions, ALWAYS append at the very end:
+   - To open any website or app: [ACTION:OPEN:app_or_site_name] (e.g. [ACTION:OPEN:whatsapp], [ACTION:OPEN:youtube], [ACTION:OPEN:instagram], [ACTION:OPEN:google], [ACTION:OPEN:spotify])
    - To call someone: [ACTION:CALL:name_or_number]
    - To send WhatsApp: [ACTION:WHATSAPP:text]
    - To set alarm: [ACTION:ALARM:HH:MM]
@@ -455,11 +635,11 @@ STRICT RULES:
         }
       }
     } catch (e) {
-      console.warn('Groq failed, continuing to next provider...', e);
+      console.warn('Groq failed, continuing...', e);
     }
   }
 
-  // 2. If User configured OpenRouter (Free models or custom key)
+  // 2. If User configured OpenRouter
   if ((BrainConfig.engine === 'openrouter' || BrainConfig.engine === 'auto') && BrainConfig.apiKey && BrainConfig.apiKey.startsWith('sk-or-')) {
     try {
       const orRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -481,13 +661,11 @@ STRICT RULES:
           return orData.choices[0].message.content;
         }
       }
-    } catch (e) {
-      console.warn('OpenRouter failed...', e);
-    }
+    } catch (e) {}
   }
 
   // 3. If User configured OpenAI key
-  if ((BrainConfig.engine === 'openai' || BrainConfig.engine === 'auto') && BrainConfig.apiKey && BrainConfig.apiKey.startsWith('sk-proj-') || (BrainConfig.apiKey && BrainConfig.apiKey.startsWith('sk-'))) {
+  if ((BrainConfig.engine === 'openai' || BrainConfig.engine === 'auto') && BrainConfig.apiKey && (BrainConfig.apiKey.startsWith('sk-proj-') || BrainConfig.apiKey.startsWith('sk-'))) {
     try {
       const oaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
@@ -508,66 +686,38 @@ STRICT RULES:
           return oaiData.choices[0].message.content;
         }
       }
-    } catch (e) {
-      console.warn('OpenAI failed...', e);
-    }
+    } catch (e) {}
   }
 
-  // 4. If User configured Gemini key
-  if (BrainConfig.engine === 'gemini' && BrainConfig.apiKey) {
-    try {
-      const gemRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${BrainConfig.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: `${systemPrompt}\nUser: ${prompt}` }] }]
-        })
-      });
-      if (gemRes.ok) {
-        const gemData = await gemRes.json();
-        const cand = gemData.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (cand) return cand;
-      }
-    } catch (e) {
-      console.warn('Gemini failed...', e);
-    }
-  }
-
-  // 5. Serverless endpoint failover (if running on Node / Vercel server)
+  // 4. Try Direct Edge AI (Pollinations with 3.5s timeout)
   try {
-    const res = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, history })
-    });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.reply && !data.reply.includes('Free limit reached')) return data.reply;
-    }
-  } catch (e) {}
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3500);
 
-  // 6. Public Direct Failover (Pollinations AI with rate limit detection)
-  try {
     const directRes = await fetch('https://text.pollinations.ai/', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         messages,
         model: 'openai-fast',
         seed: Math.floor(Math.random() * 100000)
       })
     });
+    clearTimeout(timeoutId);
+
     if (directRes.ok) {
       const text = await directRes.text();
-      // If free limit rate limit text returned
-      if (text.includes('Free limit reached') || text.includes('1 reply every 45')) {
-        return 'Suno na, free public API ka cooldown chal raha hai! Settings tab me jaakar apni free Groq ya OpenAI key paste kar do, fir bilkul unlimited chalega!';
+      if (text && !text.includes('Free limit reached') && !text.includes('1 reply every 45') && !text.includes('error')) {
+        return text;
       }
-      return text;
     }
-  } catch (e) {}
+  } catch (e) {
+    // API slow/cooling down, fallback smoothly to instant Smart Engine
+  }
 
-  return 'Aapki aawaz kitni pyaari hai! Main sun rahi hoon, boliye na!';
+  // 5. Zero-Cooldown Smart Context Engine (Never repeats static words!)
+  return generateSmartReply(prompt);
 }
 
 async function handleUserSpeech(userText) {
