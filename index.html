@@ -31,11 +31,11 @@
     <!-- Mode Selector & Wake Bar (Optimized for Android) -->
     <div class="handsfree-bar">
       <div style="display: flex; gap: 6px;">
-        <button id="modeTapBtn" class="handsfree-btn" style="background: var(--accent-pink); padding: 4px 10px;" onclick="toggleMode('tap')">
-          Tap to Talk
+        <button id="modeAutoBtn" class="handsfree-btn" style="background: var(--accent-pink); padding: 4px 10px;" onclick="toggleHandsFree(true)">
+          Hands-Free: ON
         </button>
-        <button id="modeAutoBtn" class="handsfree-btn" style="background: transparent; border: 1px solid var(--border-neon); padding: 4px 10px;" onclick="toggleMode('auto')">
-          Auto Loop
+        <button id="modeTapBtn" class="handsfree-btn" style="background: transparent; border: 1px solid var(--border-neon); padding: 4px 10px;" onclick="toggleHandsFree(false)">
+          Manual
         </button>
       </div>
       <button class="handsfree-btn" id="wakeLockBtn" style="padding: 4px 10px;" onclick="toggleScreenWakeLock()">
@@ -59,7 +59,7 @@
         <div class="glass-box chat-scroll" id="chatFeed">
           <div class="chat-bubble senora" id="senoraBubble">
             <div class="bubble-sender"><i class="fa-solid fa-sparkles"></i> Senora</div>
-            <span id="senoraSpeechText">Namaste! Main Senora hoon. Maine voice speed badha di hai aur repeat hone wala issue fix kar diya hai. Orb ko tap karke boliye, main turant jawab dungi!</span>
+            <span id="senoraSpeechText">Namaste! Main Senora hoon. Sweet aur cute 17 saal ki voice, continuous hands-free listening, aur koi bhi app ya website open karne ke liye main taiyar hoon. Bas ek baar boliye!</span>
           </div>
         </div>
 
@@ -186,5 +186,3 @@
   <script src="app.js"></script>
 </body>
 </html>
-
-<!-- Trigger Vercel Build 2026-11-27T08:00:45.860532 -->
