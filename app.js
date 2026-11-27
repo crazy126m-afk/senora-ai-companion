@@ -1,12 +1,13 @@
 /**
- * SENORA 2.0 - Autonomous Voice AI Companion
- * GPT-4o Brain & True Edge Neural Female Voice Engine
+ * SENORA 2.7 - 17-Year-Old Natural Voice & Zero Repeat Fix
  */
 
 const SenoraState = {
   isListening: false,
   isSpeaking: false,
-  continuousLoopActive: true,
+  isProcessing: false,
+  lastSpokenText: '',
+  lastSpokenTime: 0,
   wakeLock: null,
   currentAudioPlayer: null,
   activeVoice: 'hi-IN-SwaraNeural',
@@ -17,7 +18,7 @@ const SenoraState = {
 };
 
 // ==========================================
-// 1. SCREEN WAKE-LOCK (PHONE KEEP-AWAKE)
+// 1. SCREEN WAKE-LOCK
 // ==========================================
 async function toggleScreenWakeLock() {
   const btn = document.getElementById('wakeLockBtn');
@@ -25,7 +26,7 @@ async function toggleScreenWakeLock() {
     try {
       if (!SenoraState.wakeLock) {
         SenoraState.wakeLock = await navigator.wakeLock.request('screen');
-        btn.textContent = 'Screen Kept Awake ✓';
+        btn.textContent = 'Screen Awake ✓';
         btn.style.background = '#10b981';
       } else {
         await SenoraState.wakeLock.release();
@@ -39,14 +40,13 @@ async function toggleScreenWakeLock() {
   }
 }
 
-// Auto wake-lock on first user interaction
 window.addEventListener('click', () => {
   if (!SenoraState.wakeLock && 'wakeLock' in navigator) {
     navigator.wakeLock.request('screen').then(wl => {
       SenoraState.wakeLock = wl;
       const btn = document.getElementById('wakeLockBtn');
       if (btn) {
-        btn.textContent = 'Screen Kept Awake ✓';
+        btn.textContent = 'Screen Awake ✓';
         btn.style.background = '#10b981';
       }
     }).catch(() => {});
@@ -54,11 +54,10 @@ window.addEventListener('click', () => {
 }, { once: true });
 
 // ==========================================
-// 2. ZERO-TAP CONTINUOUS LISTENING ENGINE
+// 2. CLEAN SPEECH RECOGNITION (NO REPEATS)
 // ==========================================
 const SpeechEngine = {
   recognition: null,
-  sttRestartTimer: null,
 
   initSTT() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -68,62 +67,81 @@ const SpeechEngine = {
     }
 
     this.recognition = new SpeechRecognition();
-    this.recognition.continuous = false;
+    this.recognition.continuous = false; // Prevents endless Android Google Voice beeping
     this.recognition.interimResults = false;
-    this.recognition.lang = 'hi-IN'; // Recognizes Hindi + English smoothly
+    this.recognition.lang = 'hi-IN';
 
     this.recognition.onstart = () => {
       SenoraState.isListening = true;
-      updateVisualState('Senora is listening... Bas bolo!', true);
+      updateVisualState('Sun rahi hoon... Boliye!', true);
     };
 
     this.recognition.onresult = (event) => {
+      if (!event.results || !event.results[0]) return;
       const transcript = event.results[0][0].transcript;
       if (transcript && transcript.trim()) {
-        handleUserSpeech(transcript.trim());
+        const text = transcript.trim();
+        const now = Date.now();
+
+        // Prevent duplicate firing within 3.5 seconds
+        if (text === SenoraState.lastSpokenText && (now - SenoraState.lastSpokenTime) < 3500) {
+          return;
+        }
+        SenoraState.lastSpokenText = text;
+        SenoraState.lastSpokenTime = now;
+
+        this.stopListening();
+        handleUserSpeech(text);
       }
     };
 
     this.recognition.onerror = () => {
-      this.safeRestartSTT(500);
+      this.stopListening();
     };
 
     this.recognition.onend = () => {
       SenoraState.isListening = false;
-      if (SenoraState.continuousLoopActive && !SenoraState.isSpeaking) {
-        this.safeRestartSTT(400);
+      if (!SenoraState.isSpeaking && !SenoraState.isProcessing) {
+        updateVisualState('Orb ko tap karke boliye', false);
       }
     };
-
-    this.safeRestartSTT(500);
   },
 
-  safeRestartSTT(delay = 400) {
-    if (this.sttRestartTimer) clearTimeout(this.sttRestartTimer);
-    if (SenoraState.isSpeaking) return;
-
-    this.sttRestartTimer = setTimeout(() => {
-      if (this.recognition && !SenoraState.isSpeaking && !SenoraState.isListening) {
-        try {
-          this.recognition.start();
-        } catch (e) {}
-      }
-    }, delay);
+  startListening() {
+    if (SenoraState.isSpeaking || SenoraState.isProcessing) return;
+    if (this.recognition) {
+      try {
+        this.recognition.start();
+      } catch (e) {}
+    }
   },
 
-  // Play Pure Edge Neural Female Voice
+  stopListening() {
+    SenoraState.isListening = false;
+    if (this.recognition) {
+      try { this.recognition.abort(); } catch (e) {}
+    }
+    updateVisualState('Orb ko tap karke boliye', false);
+  },
+
+  toggleListening() {
+    if (SenoraState.isListening) {
+      this.stopListening();
+    } else {
+      this.startListening();
+    }
+  },
+
+  // 17-Year-Old Natural Voice Player (Never falls back to robot voice!)
   speak(text, onComplete) {
     if (!text || !text.trim()) {
+      SenoraState.isProcessing = false;
       if (onComplete) onComplete();
       return;
     }
 
-    // Pause recognition while speaking so she doesn't hear herself
-    if (this.recognition && SenoraState.isListening) {
-      try { this.recognition.stop(); } catch (e) {}
-    }
+    this.stopListening();
 
-    // Stop any existing playing audio
     if (SenoraState.currentAudioPlayer) {
       try {
         SenoraState.currentAudioPlayer.pause();
@@ -131,8 +149,12 @@ const SpeechEngine = {
       } catch (e) {}
     }
 
-    // Clean text: strip action tags and markdown symbols
-    const cleanSpeech = text.replace(/\[ACTION:[^\]]+\]/g, '').replace(/[*_#`~[\]]/g, '').trim();
+    // Strip emojis completely so they are NEVER spoken aloud
+    const cleanSpeech = text
+      .replace(/\[ACTION:[^\]]+\]/g, '')
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
+      .replace(/[*_#`~[\]]/g, '')
+      .trim();
 
     const ttsUrl = `/api/tts?text=${encodeURIComponent(cleanSpeech)}&voice=${encodeURIComponent(SenoraState.activeVoice)}`;
     const audio = new Audio(ttsUrl);
@@ -140,53 +162,28 @@ const SpeechEngine = {
 
     audio.onplay = () => {
       SenoraState.isSpeaking = true;
-      updateVisualState('Senora is speaking...', false);
+      SenoraState.isProcessing = false;
+      updateVisualState('Senora bol rahi hai...', false);
     };
 
     audio.onended = () => {
       SenoraState.isSpeaking = false;
       SenoraState.currentAudioPlayer = null;
-      updateVisualState('Senora is listening... Bas bolo!', true);
+      updateVisualState('Orb ko tap karke boliye', false);
       if (onComplete) onComplete();
-
-      // Zero-Tap: immediately listen again!
-      if (SenoraState.continuousLoopActive) {
-        this.safeRestartSTT(300);
-      }
     };
 
-    audio.onerror = (e) => {
-      console.warn('TTS playback error, falling back to local synthesis', e);
-      this.fallbackBrowserSpeech(cleanSpeech, onComplete);
-    };
-
-    audio.play().catch(err => {
-      console.warn('Audio play blocked:', err);
-      this.fallbackBrowserSpeech(cleanSpeech, onComplete);
-    });
-  },
-
-  fallbackBrowserSpeech(cleanText, onComplete) {
-    if (!window.speechSynthesis) {
-      if (onComplete) onComplete();
-      return;
-    }
-    const utter = new SpeechSynthesisUtterance(cleanText);
-    utter.pitch = 1.15;
-    utter.rate = 0.96;
-    utter.onstart = () => {
-      SenoraState.isSpeaking = true;
-      updateVisualState('Senora is speaking...', false);
-    };
-    utter.onend = () => {
+    audio.onerror = () => {
       SenoraState.isSpeaking = false;
-      updateVisualState('Senora is listening... Bas bolo!', true);
-      if (onComplete) onComplete();
-      if (SenoraState.continuousLoopActive) {
-        this.safeRestartSTT(300);
-      }
+      SenoraState.isProcessing = false;
+      updateVisualState('Orb ko tap karke boliye', false);
     };
-    window.speechSynthesis.speak(utter);
+
+    audio.play().catch(() => {
+      SenoraState.isSpeaking = false;
+      SenoraState.isProcessing = false;
+      updateVisualState('Orb ko tap karke boliye', false);
+    });
   }
 };
 
@@ -196,7 +193,7 @@ function updateVisualState(label, listening) {
   const micBtn = document.getElementById('micBtn');
 
   if (lbl) lbl.textContent = label;
-  if (pill) pill.textContent = listening ? 'Listening' : 'Speaking';
+  if (pill) pill.textContent = listening ? 'Listening' : (SenoraState.isSpeaking ? 'Speaking' : 'Ready');
   if (micBtn) {
     if (listening) micBtn.classList.add('listening');
     else micBtn.classList.remove('listening');
@@ -204,13 +201,15 @@ function updateVisualState(label, listening) {
 }
 
 // ==========================================
-// 3. GPT-4o BRAIN INTELLIGENCE & ACTION PARSING
+// 3. BRAIN DISPATCHER (NO DUPLICATES)
 // ==========================================
 async function handleUserSpeech(userText) {
   if (!userText || !userText.trim()) return;
+  if (SenoraState.isProcessing || SenoraState.isSpeaking) return;
 
+  SenoraState.isProcessing = true;
   appendChatBubble('user', userText);
-  updateVisualState('Senora is thinking...', false);
+  updateVisualState('Senora soch rahi hai...', false);
 
   try {
     const res = await fetch('/api/ask', {
@@ -218,28 +217,30 @@ async function handleUserSpeech(userText) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt: userText,
-        history: SenoraState.chatHistory.slice(-6)
+        history: SenoraState.chatHistory.slice(-4)
       })
     });
 
     const data = await res.json();
     const replyText = data.reply || 'Main sun rahi hoon, boliye!';
 
-    // Store in history
     SenoraState.chatHistory.push({ role: 'user', content: userText });
     SenoraState.chatHistory.push({ role: 'assistant', content: replyText });
 
-    // Parse and execute actions
     executeActionIfPresent(replyText);
 
-    // Display and Speak
-    const cleanDisplay = replyText.replace(/\[ACTION:[^\]]+\]/g, '').trim();
-    appendChatBubble('senora', cleanDisplay);
+    // Strip emojis for display as well
+    const cleanDisplay = replyText
+      .replace(/\[ACTION:[^\]]+\]/g, '')
+      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2600}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1FA70}-\u{1FAFF}\u{FE00}-\u{FE0F}\u{200D}]/gu, '')
+      .trim();
 
+    appendChatBubble('senora', cleanDisplay);
     SpeechEngine.speak(cleanDisplay);
   } catch (err) {
     console.error('Brain Error:', err);
-    const fallback = 'Main samajh gayi, par internet response thoda slow hai. Aap dobara poochhiye!';
+    SenoraState.isProcessing = false;
+    const fallback = 'Suno na, lagta hai internet slow hai. Ek baar dobara bolo!';
     appendChatBubble('senora', fallback);
     SpeechEngine.speak(fallback);
   }
@@ -253,20 +254,17 @@ function executeActionIfPresent(text) {
   const payload = match[2].trim();
 
   if (actionType === 'CALL') {
-    triggerHapticFeedback();
     window.location.href = `tel:${encodeURIComponent(payload)}`;
   } else if (actionType === 'WHATSAPP') {
-    triggerHapticFeedback();
     window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(payload)}`, '_blank');
   } else if (actionType === 'ALARM') {
-    triggerHapticFeedback();
     SenoraState.alarms.push({ id: Date.now().toString(), time: payload, label: 'Voice Alarm', enabled: true });
     renderAlarms();
   } else if (actionType === 'MAP') {
     window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(payload)}`, '_blank');
   } else if (actionType === 'NOTE') {
     const notesArea = document.getElementById('voiceNotesArea');
-    notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + payload;
+    if (notesArea) notesArea.value = (notesArea.value ? notesArea.value + '\n• ' : '• ') + payload;
   }
 }
 
@@ -298,6 +296,11 @@ const Orb = {
     this.canvas = document.getElementById('orbCanvas');
     if (!this.canvas) return;
     this.ctx = this.canvas.getContext('2d');
+
+    this.canvas.addEventListener('click', () => {
+      SpeechEngine.toggleListening();
+    });
+
     this.render();
   },
 
@@ -313,15 +316,15 @@ const Orb = {
     const cy = height / 2;
 
     let energy = 1.0;
-    if (SenoraState.isListening) energy = 2.2;
+    if (SenoraState.isListening) energy = 2.4;
     else if (SenoraState.isSpeaking) energy = 2.0;
 
-    const baseRadius = 66 + Math.sin(this.time * 2) * (3.5 * energy);
+    const baseRadius = 66 + Math.sin(this.time * 2.5) * (3.5 * energy);
 
     const halo = ctx.createRadialGradient(cx, cy, baseRadius * 0.4, cx, cy, baseRadius * 1.8);
     if (SenoraState.isListening) {
-      halo.addColorStop(0, 'rgba(16, 185, 129, 0.45)');
-      halo.addColorStop(0.6, 'rgba(0, 242, 254, 0.2)');
+      halo.addColorStop(0, 'rgba(16, 185, 129, 0.55)');
+      halo.addColorStop(0.6, 'rgba(0, 242, 254, 0.25)');
       halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
     } else {
       halo.addColorStop(0, 'rgba(255, 45, 117, 0.45)');
@@ -375,25 +378,17 @@ const Orb = {
 // ==========================================
 function promptDirectCall() {
   const number = prompt('Enter Phone Number or Contact Name:');
-  if (number) {
-    triggerHapticFeedback();
-    window.location.href = `tel:${encodeURIComponent(number)}`;
-  }
+  if (number) window.location.href = `tel:${encodeURIComponent(number)}`;
 }
 
 function promptDirectWhatsApp() {
   const msg = prompt('Enter WhatsApp Message:');
-  if (msg) {
-    triggerHapticFeedback();
-    window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
-  }
+  if (msg) window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
 }
 
 function promptNavigation() {
   const place = prompt('Enter Destination:');
-  if (place) {
-    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`, '_blank');
-  }
+  if (place) window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}`, '_blank');
 }
 
 function triggerHapticFeedback() {
@@ -403,9 +398,7 @@ function triggerHapticFeedback() {
 function copyNotes() {
   const notes = document.getElementById('voiceNotesArea').value;
   if (!notes) return;
-  navigator.clipboard.writeText(notes).then(() => {
-    alert('Notes copied to clipboard!');
-  });
+  navigator.clipboard.writeText(notes).then(() => alert('Notes copied!'));
 }
 
 function clearNotes() {
@@ -420,22 +413,22 @@ async function askAiRoadmap() {
   if (!input) return;
 
   const output = document.getElementById('roadmapOutput');
-  output.textContent = 'Generating comprehensive roadmap with GPT-4o...';
+  output.textContent = 'Generating quick roadmap...';
 
   try {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        prompt: `Create an in-depth, inspiring, step-by-step practical study roadmap for: "${input}". Break it down into clear stages (Foundation, Core Mastery, Projects, Advanced). Use clean bullet points.`,
+        prompt: `Create a concise, punchy, step-by-step master roadmap for "${input}". Keep it clear with 4 bullet stages. No emojis.`,
         history: []
       })
     });
     const data = await res.json();
     output.textContent = data.reply;
-    SpeechEngine.speak(`Maine aapka ${input} ka roadmap generate kar diya hai.`);
+    SpeechEngine.speak(`Maine ${input} ka roadmap bana diya hai, screen par dekho!`);
   } catch (err) {
-    output.textContent = 'Error generating roadmap. Please check internet connection.';
+    output.textContent = 'Error generating roadmap.';
   }
 }
 
@@ -476,7 +469,6 @@ function addNewAlarm() {
   if (!time) return;
   SenoraState.alarms.push({ id: Date.now().toString(), time, label, enabled: true });
   renderAlarms();
-  triggerHapticFeedback();
 }
 
 function deleteAlarm(id) {
@@ -493,10 +485,6 @@ function switchPane(panelId, btnElement) {
   if (btnElement) btnElement.classList.add('active');
 }
 
-function testNeuralVoice() {
-  SpeechEngine.speak('Namaste! Main Senora hoon. Meri aawaz ab pure neural technology se generated hai. Kya aapko meri aawaz natural lag rahi hai?');
-}
-
 // ==========================================
 // 8. DOM INITIALIZATION
 // ==========================================
@@ -507,11 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const micBtn = document.getElementById('micBtn');
   micBtn.addEventListener('click', () => {
-    if (SenoraState.isListening) {
-      SpeechEngine.recognition.stop();
-    } else {
-      SpeechEngine.safeRestartSTT(0);
-    }
+    SpeechEngine.toggleListening();
   });
 
   const sendBtn = document.getElementById('sendTextBtn');
@@ -528,12 +512,4 @@ document.addEventListener('DOMContentLoaded', () => {
   textInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') submitText();
   });
-
-  const voiceSelect = document.getElementById('neuralVoiceSelect');
-  if (voiceSelect) {
-    voiceSelect.addEventListener('change', (e) => {
-      SenoraState.activeVoice = e.target.value;
-      testNeuralVoice();
-    });
-  }
 });
