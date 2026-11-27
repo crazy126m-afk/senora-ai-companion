@@ -1,8 +1,0 @@
-{
-  "name": "senora-ai-companion",
-  "version": "2.7.0",
-  "description": "Senora - Autonomous AI Companion",
-  "scripts": {
-    "start": "node local_server.js"
-  }
-}
