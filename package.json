@@ -1,12 +1,8 @@
 {
   "name": "senora-ai-companion",
-  "version": "1.0.0",
-  "description": "Senora - Voice-Controlled AI Companion, Study Mentor & Phone Controller",
-  "main": "server.js",
+  "version": "2.7.0",
+  "description": "Senora - Autonomous AI Companion",
   "scripts": {
-    "start": "node server.js"
-  },
-  "keywords": ["ai", "voice-assistant", "study-companion", "phone-control"],
-  "author": "",
-  "license": "MIT"
+    "start": "node local_server.js"
+  }
 }
