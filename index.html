@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Senora - AI Voice & Study Companion</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#ff2d75">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-viewport">
+    <!-- Luxury Header -->
+    <header class="header-bar">
+      <div class="brand-section">
+        <div class="brand-halo">S</div>
+        <div class="brand-meta">
+          <h1>SENORA</h1>
+          <p id="systemStateDesc">Hands-Free Autonomous AI</p>
+        </div>
+      </div>
+      <div class="status-badge" id="handsfreeStatusPill">
+        <span class="live-indicator"></span>
+        <span id="listeningStateLabel">Listening</span>
+      </div>
+    </header>
+
+    <!-- Hands-Free Screen Wake Banner -->
+    <div class="handsfree-banner">
+      <div class="handsfree-title">
+        <i class="fa-solid fa-bolt" style="color: var(--accent-neon);"></i>
+        <span>Zero-Tap Voice Mode: <b>Active</b></span>
+      </div>
+      <button class="handsfree-toggle-btn" id="wakeLockBtn" onclick="toggleScreenWakeLock()">
+        Keep Screen Awake
+      </button>
+    </div>
+
+    <!-- Main Viewport Body -->
+    <main class="main-viewport">
+      <!-- VIEW 1: COMPANION & VOICE ORB -->
+      <section id="view-voice" class="view-section active">
+        <!-- Holographic 3D Glowing Audio Orb -->
+        <div class="orb-stage">
+          <canvas id="orbCanvas" width="300" height="300"></canvas>
+          <div class="orb-status-text">
+            <i class="fa-solid fa-waveform-lines" style="color: var(--accent-neon);"></i>
+            <span id="orbStateLabel">Senora is listening... Bas bolo!</span>
+          </div>
+        </div>
+
+        <!-- Live Dialogue Feed -->
+        <div class="neo-card dialogue-viewport">
+          <div class="dialogue-bubble senora" id="senoraBubble">
+            <div class="bubble-tag"><i class="fa-solid fa-sparkles"></i> Senora</div>
+            <span id="senoraSpeechText">Namaste! Main Senora hoon. Maine zero-tap mode on kar diya hai — aapko mic ya koi button dabane ki zaroorat nahi hai. Bas bolte rahiye, main continuously sunti rahungi aur har cheez execute karungi.</span>
+          </div>
+          <div class="dialogue-bubble user" id="userBubble" style="display: none;">
+            <div class="bubble-tag"><i class="fa-solid fa-user"></i> You</div>
+            <span id="userSpeechText">...</span>
+          </div>
+        </div>
+
+        <!-- Bottom Voice Command Strip -->
+        <div class="voice-command-strip">
+          <button class="mic-toggle-btn listening" id="micBtn" title="Microphone Active">
+            <i class="fa-solid fa-microphone" id="micIcon"></i>
+          </button>
+          <input type="text" class="strip-input" id="textPromptInput" placeholder="Bol sakte ho ya likho (e.g. Call..., Alarm..., Padhao...)" />
+          <button class="neo-btn" id="sendTextBtn" style="padding: 9px 14px; border-radius: 20px;">
+            <i class="fa-solid fa-arrow-up"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- VIEW 2: PHONE & DEVICE CONTROL -->
+      <section id="view-phone" class="view-section">
+        <div class="neo-card" style="padding: 18px;">
+          <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">
+            <i class="fa-solid fa-mobile-screen" style="color: var(--accent-neon);"></i> Phone Voice Controller
+          </h3>
+          <p style="font-size: 12px; color: var(--text-secondary);">
+            Aap bol kar call, WhatsApp, navigation ya notes trigger kar sakte hain.
+          </p>
+        </div>
+
+        <div class="phone-grid">
+          <div class="neo-card phone-tile" onclick="promptDirectCall()">
+            <div class="tile-icon icon-call"><i class="fa-solid fa-phone"></i></div>
+            <div class="tile-title">Direct Call</div>
+            <div class="tile-desc">Bolo "Call [Name/Number]"</div>
+          </div>
+
+          <div class="neo-card phone-tile" onclick="promptDirectWhatsApp()">
+            <div class="tile-icon icon-wa"><i class="fa-brands fa-whatsapp"></i></div>
+            <div class="tile-title">WhatsApp</div>
+            <div class="tile-desc">Bolo "WhatsApp [Message]"</div>
+          </div>
+
+          <div class="neo-card phone-tile" onclick="promptNavigation()">
+            <div class="tile-icon icon-map"><i class="fa-solid fa-location-arrow"></i></div>
+            <div class="tile-title">GPS Directions</div>
+            <div class="tile-desc">Bolo "Navigate to..."</div>
+          </div>
+
+          <div class="neo-card phone-tile" onclick="triggerHapticFeedback()">
+            <div class="tile-icon icon-alarm"><i class="fa-solid fa-mobile-retro"></i></div>
+            <div class="tile-title">Haptic Buzz</div>
+            <div class="tile-desc">Test Phone Vibration</div>
+          </div>
+        </div>
+
+        <!-- Voice Notes Scratchpad -->
+        <div class="neo-card" style="padding: 16px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13.5px; font-weight: 700;">
+              <i class="fa-solid fa-pen-nib" style="color: var(--accent-purple);"></i> Voice Notes Scratchpad
+            </span>
+            <div style="display: flex; gap: 8px;">
+              <button class="neo-btn" style="padding: 5px 12px; font-size: 11px;" onclick="copyNotes()">Copy</button>
+              <button class="neo-btn" style="padding: 5px 12px; font-size: 11px; background: #334155;" onclick="clearNotes()">Clear</button>
+            </div>
+          </div>
+          <textarea id="voiceNotesArea" class="neo-input" style="height: 110px; resize: none;" placeholder="Senora ko bolo: 'Note likho [baat]' ya yaha likhein..."></textarea>
+        </div>
+      </section>
+
+      <!-- VIEW 3: SOCRATIC STUDY LAB -->
+      <section id="view-study" class="view-section">
+        <div class="neo-card" style="padding: 18px;">
+          <h3 style="font-size: 16px; font-weight: 700; margin-bottom: 6px;">
+            <i class="fa-solid fa-brain" style="color: var(--accent-cyan);"></i> Socratic Study Mentor
+          </h3>
+          <p style="font-size: 12px; color: var(--text-secondary);">
+            Senora se boliye "Mujhe Python padhao" ya "DSA explain karo" — woh step-by-step padhayegi.
+          </p>
+        </div>
+
+        <div class="neo-card" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="font-size: 13.5px; font-weight: 700;">Custom Study Roadmap</div>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="roadmapTopicInput" class="neo-input" placeholder="Topic (e.g. Python, DSA, Physics)..." />
+            <button class="neo-btn" onclick="generateRoadmap()">Generate</button>
+          </div>
+          <div id="roadmapResults" style="display: flex; flex-direction: column; gap: 8px; margin-top: 6px;"></div>
+        </div>
+
+        <!-- Quiz Simulator -->
+        <div class="neo-card" style="padding: 18px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13.5px; font-weight: 700;">
+              <i class="fa-solid fa-award" style="color: #f59e0b;"></i> Voice Quiz Session
+            </span>
+            <button class="neo-btn" style="padding: 5px 12px; font-size: 11px;" onclick="startQuizSession()">Start Quiz</button>
+          </div>
+          <div id="quizQuestion" style="font-size: 13.5px; font-weight: 600; line-height: 1.4;">
+            Click 'Start Quiz' to begin answering questions with Senora!
+          </div>
+          <div id="quizOptions" style="display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 8px;"></div>
+        </div>
+      </section>
+
+      <!-- VIEW 4: ALARMS & ROUTINES -->
+      <section id="view-alarms" class="view-section">
+        <div class="neo-card" style="padding: 18px; background: linear-gradient(135deg, rgba(255, 45, 117, 0.15), rgba(139, 92, 246, 0.15));">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <span style="font-size: 14px; font-weight: 700; color: #fff;">
+              <i class="fa-solid fa-sun" style="color: #fbbf24;"></i> Morning Audio Briefing
+            </span>
+            <button class="neo-btn" onclick="playMorningBriefing()" style="padding: 6px 14px; font-size: 11px;">
+              Listen
+            </button>
+          </div>
+          <p style="font-size: 12px; color: #cbd5e1; line-height: 1.5;">
+            Senora aapko din ki date, motivation aur daily target bol kar brief karegi.
+          </p>
+        </div>
+
+        <!-- Set Alarm -->
+        <div class="neo-card" style="padding: 18px; display: flex; flex-direction: column; gap: 12px;">
+          <div style="font-size: 13.5px; font-weight: 700;">Set Voice / Anti-Snooze Alarm</div>
+          <div style="display: flex; gap: 10px;">
+            <input type="time" id="alarmTimeInput" class="neo-input" style="font-size: 16px; font-weight: 700;" value="07:00" />
+            <input type="text" id="alarmLabelInput" class="neo-input" placeholder="Label (e.g. Study Time)" />
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px;">
+              <input type="checkbox" id="challengeModeCheckbox" checked />
+              Anti-Snooze Challenge Mode
+            </label>
+            <button class="neo-btn" onclick="addNewAlarm()">Set Alarm</button>
+          </div>
+        </div>
+
+        <div id="alarmsList" style="display: flex; flex-direction: column; gap: 10px;"></div>
+      </section>
+
+      <!-- VIEW 5: VOICE STUDIO & CUSTOMIZATION -->
+      <section id="view-settings" class="view-section">
+        <div class="neo-card" style="padding: 18px; display: flex; flex-direction: column; gap: 16px;">
+          <h3 style="font-size: 16px; font-weight: 700;">
+            <i class="fa-solid fa-sliders" style="color: var(--accent-neon);"></i> Natural Female Voice Studio
+          </h3>
+
+          <div class="voice-row">
+            <div class="voice-label-flex">
+              <span>Select Natural Female Voice</span>
+              <span style="color: var(--accent-cyan);" id="selectedVoiceBadge">Auto-Detect</span>
+            </div>
+            <select id="voiceSelect" class="neo-input"></select>
+          </div>
+
+          <div class="voice-row">
+            <div class="voice-label-flex">
+              <span>Pitch (Sweet &amp; Natural Female Cadence)</span>
+              <span id="pitchVal" style="color: var(--accent-neon);">1.12</span>
+            </div>
+            <input type="range" id="pitchRange" min="0.7" max="1.4" step="0.02" value="1.12" style="width: 100%; accent-color: var(--accent-neon);" />
+          </div>
+
+          <div class="voice-row">
+            <div class="voice-label-flex">
+              <span>Speaking Speed (Human Cadence)</span>
+              <span id="rateVal" style="color: var(--accent-cyan);">0.95</span>
+            </div>
+            <input type="range" id="rateRange" min="0.7" max="1.3" step="0.02" value="0.95" style="width: 100%; accent-color: var(--accent-cyan);" />
+          </div>
+
+          <button class="neo-btn" onclick="testVoiceSample()">
+            <i class="fa-solid fa-play"></i> Test Natural Female Voice
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Navigation Dock -->
+    <nav class="bottom-dock">
+      <button class="dock-btn active" onclick="switchView('view-voice', this)">
+        <i class="fa-solid fa-microphone-lines"></i>
+        <span>Companion</span>
+      </button>
+      <button class="dock-btn" onclick="switchView('view-phone', this)">
+        <i class="fa-solid fa-mobile-screen"></i>
+        <span>Phone</span>
+      </button>
+      <button class="dock-btn" onclick="switchView('view-study', this)">
+        <i class="fa-solid fa-graduation-cap"></i>
+        <span>Study</span>
+      </button>
+      <button class="dock-btn" onclick="switchView('view-alarms', this)">
+        <i class="fa-solid fa-bell"></i>
+        <span>Alarms</span>
+      </button>
+      <button class="dock-btn" onclick="switchView('view-settings', this)">
+        <i class="fa-solid fa-sliders"></i>
+        <span>Voice</span>
+      </button>
+    </nav>
+
+    <!-- Anti-Snooze Challenge Modal -->
+    <div class="modal-backdrop" id="alarmModal" style="display: none;">
+      <div class="challenge-box">
+        <div style="font-size: 32px; color: #ef4444; animation: ping 1.5s infinite;">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <h2 style="font-size: 20px; font-weight: 800; color: #fff;">WAKE UP! ALARM RINGING</h2>
+        <p style="font-size: 13px; color: #cbd5e1;">Sawal solve karo alarm band karne ke liye:</p>
+        <div id="challengeQuestion" style="font-size: 24px; font-weight: 800; color: var(--accent-neon);">14 × 7 = ?</div>
+        <input type="number" id="challengeAnswerInput" class="neo-input" placeholder="Your Answer" style="text-align: center; font-size: 20px;" />
+        <button class="neo-btn" style="background: #ef4444; font-size: 15px; padding: 12px;" onclick="verifyChallengeAnswer()">
+          Dismiss Alarm
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
